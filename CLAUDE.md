@@ -53,8 +53,11 @@ always use /karpathy-guidelines skill.
 Beyond the spec's §8 set, the catalog is **broadly expanded** so all major NN families are buildable:
 conv1d/conv3d/conv_transpose2d/upsample, adaptive_avg/max_pool2d, maxpool1d/avgpool1d,
 sigmoid/tanh/leaky_relu/elu/softmax, batchnorm1d/groupnorm/instancenorm2d. Each catalog entry also
-carries a `category` (input/conv/pooling/norm/activation/recurrent/attention/merge) used for frontend
-color-coding. Adding a layer = one schema entry in `layers.py` + one codegen mapping in `codegen.py`.
+carries a `category` used for frontend color-coding. The implemented set is
+input/conv/pooling/norm/activation/recurrent/attention/merge plus four buckets for layers that fit
+none of those: `linear`, `shape` (flatten), `regularization` (dropout), `embedding`. Category is
+frontend-only metadata, enforced by nothing. Adding a layer = one schema entry in `layers.py` + one
+codegen mapping (`_CONSTRUCTORS`) in `codegen.py`.
 
 ## Run commands
 
@@ -73,4 +76,4 @@ cd frontend && npm install && npm run dev   # connects to ws://localhost:8765/ws
 
 Staged, gated build — see `.claude/handoff/` for each stage's scope, expected outcome, and the exact
 verification gate. Do not start a stage until the previous gate passes.
-0. Scaffolding/deps · 1. Core engine · 2. Store · 3. MCP tools · 4. Websocket · 5. Frontend · 6. Polish/README
+0. ✅ Scaffolding/deps · 1. ✅ Core engine · 2. Store · 3. MCP tools · 4. Websocket · 5. Frontend · 6. Polish/README
