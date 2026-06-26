@@ -48,4 +48,20 @@ Then copy one generated model to `/tmp/standalone_check.py` and run it with only
 unmodified.
 
 ## Status
-⬜ not started.
+✅ done. `backend/dev_smoke.py` reports `valid: true` for all five families with these output
+shapes: CNN `[2,10]`, residual skip `[2,16,8,8]`, transformer encoder `[2,10]`, LSTM `[2,16,16]`,
+conv-transpose autoencoder `[2,1,16,16]`. The broken channel-mismatch case returns
+`valid: false` naming `node_id: n3` / `layer_type: conv2d`. The CNN's generated code, written to
+`/tmp/standalone_check.py`, imports only `torch`/`nn`/`math` and runs a real forward (→ `(2,10)`)
+from `/tmp` with no project on the path.
+
+Notes / deviations:
+- Per-type **codegen mapping lives in `codegen.py`** (`_CONSTRUCTORS`, `_FORWARD_STYLE`), per
+  CLAUDE.md's "one codegen mapping in codegen.py"; `layers.py` holds schema + structural
+  validation only. Adding a layer = one `CATALOG` entry + one `_CONSTRUCTORS` entry.
+- The dummy-input tensor is materialized in the subprocess (`runner_template.py`) from a spec
+  (`shape`/`dtype`/`bound`) computed by `validator.py`; the policy still lives in the validator,
+  only the `torch.randn`/`torch.randint` call runs in the child to avoid tensor IPC.
+- CLAUDE.md lists 8 frontend `category` values; the expanded catalog needs 4 more for layers that
+  don't fit any (`linear`, `shape`, `regularization`, `embedding`). `category` is frontend-only
+  color metadata, unused in Stage 1 — rename freely later.

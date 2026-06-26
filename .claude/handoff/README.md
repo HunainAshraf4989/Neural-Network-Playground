@@ -15,7 +15,7 @@ Canonical references:
 | Stage | Title | Gate status |
 |---|---|---|
 | 0 | Scaffolding, CLAUDE.md, handoff docs, deps | ✅ done |
-| 1 | Core engine (layers, codegen, validator)  | ⬜ not started |
+| 1 | Core engine (layers, codegen, validator)  | ✅ done |
 | 2 | ArchitectureStore + tests                 | ⬜ not started |
 | 3 | MCP tools + main.py MCP loop              | ⬜ not started |
 | 4 | WebSocket app + standalone server         | ⬜ not started |
