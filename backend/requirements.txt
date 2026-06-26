@@ -5,3 +5,6 @@ pydantic>=2.6
 mcp>=1.2.0
 torch>=2.2
 numpy>=1.26
+
+# dev / tests
+pytest>=8
