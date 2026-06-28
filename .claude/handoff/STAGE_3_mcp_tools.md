@@ -29,4 +29,33 @@ All 9 tools callable from an MCP client; build a CNN → validate → generate_c
   pipe stderr/stdout separately and confirm logs land on stderr.
 
 ## Status
-⬜ not started.
+✅ done. `backend/mcp_tools.py` exposes `build_mcp(store, broadcast=None) -> FastMCP`, registering the
+9 tools as thin adapters that each call one store method and return its dict. Mutating tools
+(`add_layer`/`update_layer`/`remove_layer`/`connect_layers`/`disconnect_layers`/`reset_architecture`)
+`await broadcast()` on success; reads (`get`/`validate`/`generate`) never broadcast. `broadcast`
+defaults to a no-op (Stage 4 wires it to ws_app). `backend/main.py` builds ONE store and runs the
+MCP stdio loop via `mcp.run_stdio_async()` under `asyncio.run`; `MODE=standalone` exits 1 with a
+stderr notice (websocket server arrives Stage 4). All logging is forced onto stderr.
+
+`backend/tests/test_mcp_tools.py` — 29 tests, all green
+(`/home/hunain/base/bin/python -m pytest backend/tests/ -q` → 60 passed with Stage 2). They run
+through a **real in-memory MCP client session** (`create_connected_server_and_client_session`):
+exactly-9-tools + input-schema checks; happy path + every rejection branch for all 9 tools surfaced
+as `isError` results; broadcast fires on successful mutations and not on reads/failed mutations;
+valid-CNN / channel-mismatch / no-input validation; self-contained `generate_code`; reset restarts
+ids; full build→validate→generate→reset round-trip.
+
+Verification gate met:
+- Real stdio transport (`mcp.client.stdio`) exercises all 9 tools end-to-end (build CNN → validate
+  `[[2,10]]` → generate_code → error surfacing → reset). 
+- Raw-subprocess purity check: every non-empty stdout line is a JSON-RPC 2.0 frame; our startup log
+  lands on stderr and never on stdout.
+
+Notes / deviations:
+- Tool returns are annotated `dict[str, Any]` (not bare `dict`) so FastMCP emits **both**
+  `structuredContent` and JSON text content; bare `dict` yields text only.
+- Errors propagate as `ValueError` from the store; FastMCP wraps them as
+  `Error executing tool <name>: <msg>` error results — no extra catch layer in the adapters.
+- `validate_and_merge` intentionally does **not** type-check param *values* (only required-presence +
+  unknown-key); value/shape correctness is real-execution's job (invariant 4), so the update_layer
+  rejection test targets the unknown-param branch.
