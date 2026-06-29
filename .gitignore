@@ -9,6 +9,10 @@ venv/
 /tmp/_nn_architect_generated.py
 backend/_scratch/
 
+# Logs
+logs/
+*.log
+
 # Node / frontend
 node_modules/
 frontend/dist/
