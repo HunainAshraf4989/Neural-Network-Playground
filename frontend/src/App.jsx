@@ -216,6 +216,15 @@ export default function App() {
           <button type="button" className="toolbar__btn" onClick={() => send(proto.resetArchitecture())}>
             Reset
           </button>
+          <button
+            type="button"
+            className={`toolbar__btn toolbar__toggle${snapToColumns ? " is-on" : ""}`}
+            onClick={() => setSnapToColumns((s) => !s)}
+            aria-pressed={snapToColumns}
+            title="Snap nodes to layered columns while dragging"
+          >
+            Snap to columns
+          </button>
           {notice && <span className={`notice notice--${notice.kind}`}>{notice.message}</span>}
         </div>
 
@@ -233,6 +242,8 @@ export default function App() {
           onNodeDragStop={onNodeDragStop}
           onNodeClick={(_, node) => setSelectedId(node.id)}
           onPaneClick={() => setSelectedId(null)}
+          snapToGrid={snapToColumns}
+          snapGrid={SNAP_GRID}
           fitView
           fitViewOptions={{ padding: 0.25, maxZoom: 0.85 }}
           minZoom={0.2}

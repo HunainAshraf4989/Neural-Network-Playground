@@ -91,6 +91,8 @@ body { background: var(--bg); color: var(--text); }
 }
 .toolbar__btn:hover:not(:disabled) { background: var(--bg-elevated); border-color: var(--accent); }
 .toolbar__btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.toolbar__toggle.is-on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.toolbar__toggle.is-on:hover:not(:disabled) { background: #4a7ce0; }
 .notice { font-size: 12px; max-width: 320px; font-weight: 500; }
 .notice--error { color: var(--danger); }
 .notice--ack { color: #2bd49b; }
