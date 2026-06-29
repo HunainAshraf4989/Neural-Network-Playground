@@ -84,19 +84,25 @@ export default function App() {
     knownIdsRef.current = ids;
   }, [arch, setNodes, setEdges, send]);
 
-  // Re-frame the canvas whenever the node count changes so new nodes are visible
-  // — but leave pan/zoom alone on param edits (count unchanged), and don't fight
-  // a deliberate drop placement (the dropped node is already where the user put it).
+  // Re-frame only when a node is ADDED, so a new node is always visible — but
+  // leave the view alone on delete and on param edits (which previously caused
+  // the canvas to jump/zoom unexpectedly), and don't fight a deliberate drop
+  // placement. `maxZoom` keeps the fit from zooming way in on a one/two-node
+  // graph (which made the circles huge).
   useEffect(() => {
     const count = arch?.nodes?.length ?? 0;
-    if (count !== prevNodeCount.current) {
-      if (suppressFitRef.current) {
-        suppressFitRef.current = false;
-      } else if (rfRef.current) {
-        requestAnimationFrame(() => rfRef.current?.fitView({ padding: 0.2, duration: 300 }));
-      }
-    }
+    const grew = count > prevNodeCount.current;
     prevNodeCount.current = count;
+    if (!grew) return;
+    if (suppressFitRef.current) {
+      suppressFitRef.current = false;
+      return;
+    }
+    if (rfRef.current) {
+      requestAnimationFrame(() =>
+        rfRef.current?.fitView({ padding: 0.25, maxZoom: 0.85, duration: 300 }),
+      );
+    }
   }, [arch]);
 
   const selectedNode = useMemo(
@@ -214,6 +220,8 @@ export default function App() {
           onNodeClick={(_, node) => setSelectedId(node.id)}
           onPaneClick={() => setSelectedId(null)}
           fitView
+          fitViewOptions={{ padding: 0.25, maxZoom: 0.85 }}
+          minZoom={0.2}
         >
           <Background />
           <Controls />
