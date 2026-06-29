@@ -16,12 +16,14 @@ import "@xyflow/react/dist/style.css";
 import LayerNode from "./LayerNode.jsx";
 import LayerPalette from "./LayerPalette.jsx";
 import ParamsPanel from "./ParamsPanel.jsx";
+import DeletableEdge from "./DeletableEdge.jsx";
 import { useArchitectureSocket } from "./useArchitectureSocket.js";
 import { toFlowElements } from "./flow.js";
 import { defaultParams } from "./catalog.js";
 import * as proto from "./protocol.js";
 
 const NODE_TYPES = { layer: LayerNode };
+const EDGE_TYPES = { deletable: DeletableEdge };
 
 export default function App() {
   const { arch, connected, notice, send } = useArchitectureSocket();
@@ -29,14 +31,35 @@ export default function App() {
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [selectedId, setSelectedId] = useState(null);
   const wrapperRef = useRef(null);
+  const rfRef = useRef(null);
+  const prevNodeCount = useRef(0);
 
   // Server state is authoritative: recompute the whole canvas from each `state`
-  // broadcast (auto-layout, no persisted x/y per spec §13).
+  // broadcast (auto-layout, no persisted x/y per spec §13). Each edge carries an
+  // `onDelete` so its inline "×" button can remove the connection.
   useEffect(() => {
     const { nodes: n, edges: e } = toFlowElements(arch);
     setNodes(n);
-    setEdges(e);
-  }, [arch, setNodes, setEdges]);
+    setEdges(
+      e.map((edge) => ({
+        ...edge,
+        type: "deletable",
+        data: { onDelete: () => send(proto.disconnectLayers(edge.source, edge.target)) },
+      })),
+    );
+  }, [arch, setNodes, setEdges, send]);
+
+  // Positions aren't persisted (layout is recomputed every update), so a freshly
+  // added node can land off-screen. Re-frame the canvas whenever the node count
+  // changes so new nodes are always visible — but leave the user's pan/zoom alone
+  // on param edits (count unchanged).
+  useEffect(() => {
+    const count = arch?.nodes?.length ?? 0;
+    if (rfRef.current && count !== prevNodeCount.current) {
+      requestAnimationFrame(() => rfRef.current?.fitView({ padding: 0.2, duration: 300 }));
+    }
+    prevNodeCount.current = count;
+  }, [arch]);
 
   const selectedNode = useMemo(
     () => nodes.find((n) => n.id === selectedId) ?? null,
@@ -90,6 +113,8 @@ export default function App() {
           nodes={nodes}
           edges={edges}
           nodeTypes={NODE_TYPES}
+          edgeTypes={EDGE_TYPES}
+          onInit={(inst) => (rfRef.current = inst)}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
