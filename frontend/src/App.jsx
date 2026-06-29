@@ -179,7 +179,7 @@ export default function App() {
   }, [nodes]);
 
   return (
-    <div className="app">
+    <div className={`app${selectedNode ? " app--panel" : ""}`}>
       <LayerPalette onAdd={add} />
 
       <div className="canvas" onDrop={onDrop} onDragOver={onDragOver}>
