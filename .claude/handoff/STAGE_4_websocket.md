@@ -37,8 +37,10 @@ one store method via the `_DISPATCH` table — no graph mutation lives in this m
 On connect the client gets the current `state`; on a successful mutation the originator gets
 `{"type":"ack","ok":true}` and **all** clients (including the originator) get a fresh `state`
 broadcast; rejections reply `{"type":"error","message":...}` to the originator only and never
-broadcast. Malformed json, non-object messages, unknown `type`, and missing fields all return a clean
-`error` without dropping the socket. The same `manager.broadcast` coroutine is handed to `build_mcp`,
+broadcast. Malformed json, non-object messages, unknown `type`, missing fields, and a non-dict
+`params` value all return a clean `error` without dropping the socket (the store guards `params`
+type, so a `null`/list/string payload can't escape as a `TypeError` and kill the connection). The
+same `manager.broadcast` coroutine is handed to `build_mcp`,
 so **MCP mutations broadcast to ws clients too** — the Stage 3 broadcast stub is now closed.
 
 `backend/main.py`: default = full mode (`asyncio` MCP stdio loop + `uvicorn.Server` on :8765 sharing
@@ -54,12 +56,12 @@ INFO so a session can be replayed for debugging. `logs/` is gitignored.
 Verification gate met: `MODE=standalone backend & ; backend/tests/ws_smoke.py` → exit 0 (initial
 state, ack, broadcast all asserted over the real network transport).
 
-Tests (all green; full suite 87 passed):
-- `backend/tests/test_ws_app.py` — 25 in-process `TestClient` tests: initial state, ack+broadcast for
+Tests (all green; full suite 89 passed):
+- `backend/tests/test_ws_app.py` — 27 in-process `TestClient` tests: initial state, ack+broadcast for
   all six mutations, an `error` (and no broadcast) for every rejection branch (unknown type, second
   input, unknown node, self-loop, unknown target, cycle, duplicate edge, second-input-into-non-merge,
-  nonexistent edge), malformed-json / non-object / unknown-type / missing-field robustness, and
-  multi-client broadcast fan-out + new-client-sees-existing-state.
+  nonexistent edge), malformed-json / non-object / unknown-type / missing-field / non-dict-`params`
+  robustness, and multi-client broadcast fan-out + new-client-sees-existing-state.
 - `backend/tests/test_ws_stdio.py` — 2 full-mode subprocess tests: (1) cross-surface single-store
   sync (MCP `add_layer` broadcasts to a live ws client; a ws mutation is visible to MCP
   `get_architecture`); (2) stdout stays pure JSON-RPC while uvicorn serves a ws client concurrently

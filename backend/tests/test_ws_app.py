@@ -259,6 +259,29 @@ def test_non_object_message_errors():
         assert reply["type"] == "error" and "json object" in reply["message"]
 
 
+# A well-formed JSON message whose ``params`` is not an object (null / list /
+# string) must surface as a clean ``error`` — never escape as a TypeError and
+# drop the socket. The store guards this so both surfaces stay protected.
+
+def test_add_layer_non_dict_params_errors_without_dropping_socket():
+    for bad in (None, [1, 2, 3], "x"):
+        with _client() as c, c.websocket_connect("/ws") as ws:
+            _recv(ws)
+            _assert_error_no_broadcast(
+                ws, {"type": "add_layer", "layer_type": "flatten", "params": bad},
+                needle="params")
+
+
+def test_update_layer_non_dict_params_errors_without_dropping_socket():
+    for bad in (None, [1, 2, 3], "x"):
+        with _client() as c, c.websocket_connect("/ws") as ws:
+            _recv(ws)
+            _add(ws, "flatten")
+            _assert_error_no_broadcast(
+                ws, {"type": "update_layer", "node_id": "n1", "params": bad},
+                needle="params")
+
+
 # -- multi-client broadcast fan-out ----------------------------------------
 
 def test_mutation_broadcasts_to_all_clients():
