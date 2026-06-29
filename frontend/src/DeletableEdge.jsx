@@ -39,7 +39,10 @@ export default function DeletableEdge({
         id={id}
         path={edgePath}
         markerEnd={markerEnd}
-        style={{ ...style, stroke: active ? "var(--accent)" : undefined, strokeWidth: active ? 2.5 : undefined }}
+        // Concrete hex (not a CSS var): the var-based React Flow default is lost
+        // when html-to-image clones the detached viewport for PNG export, which
+        // would drop the edges. It also reads better on the dark theme.
+        style={{ ...style, stroke: active ? "#5b8def" : "#8b95a7", strokeWidth: active ? 2.5 : 1.5 }}
       />
       {/* Invisible wide hit area so the thin edge is easy to hover/click. */}
       <path
