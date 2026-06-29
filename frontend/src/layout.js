@@ -10,8 +10,8 @@
 //
 // Pure: takes {nodes, edges} (backend schema), returns { [nodeId]: {x, y} }.
 
-const COL_GAP = 240;
-const ROW_GAP = 110;
+export const COL_GAP = 240;
+export const ROW_GAP = 110;
 
 // "n12" → 12, for stable numeric ordering. Non-conforming ids sort last by id.
 function idOrder(id) {

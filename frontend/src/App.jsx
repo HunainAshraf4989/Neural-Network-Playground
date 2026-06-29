@@ -29,12 +29,22 @@ import DeletableEdge from "./DeletableEdge.jsx";
 import CodeModal from "./CodeModal.jsx";
 import { useArchitectureSocket } from "./useArchitectureSocket.js";
 import { toFlowElements } from "./flow.js";
+import { COL_GAP, ROW_GAP } from "./layout.js";
 import { defaultParams } from "./catalog.js";
 import * as proto from "./protocol.js";
 
 const NODE_TYPES = { layer: LayerNode };
 const EDGE_TYPES = { deletable: DeletableEdge };
 const IMAGE_BG = "#0f1420"; // matches the dark canvas background
+// Snap grid aligned to the auto-layout spacing, so snapped nodes line up into the
+// same layered columns/rows the deterministic layout produces.
+const SNAP_GRID = [COL_GAP / 2, ROW_GAP / 2];
+
+const finitePos = (p) => !!p && Number.isFinite(p.x) && Number.isFinite(p.y);
+const snap = (p) => ({
+  x: Math.round(p.x / SNAP_GRID[0]) * SNAP_GRID[0],
+  y: Math.round(p.y / SNAP_GRID[1]) * SNAP_GRID[1],
+});
 
 export default function App() {
   const { arch, connected, notice, send, requestCode } = useArchitectureSocket();
@@ -42,6 +52,7 @@ export default function App() {
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [codeModal, setCodeModal] = useState(null); // {code} | {error} | null
+  const [snapToColumns, setSnapToColumns] = useState(false);
   const rfRef = useRef(null);
   const prevNodeCount = useRef(0);
   const positionsRef = useRef(new Map()); // id -> {x,y} the user dragged/dropped
@@ -49,31 +60,35 @@ export default function App() {
   const pendingDropRef = useRef(null); // graph-coords for the next dropped node
   const suppressFitRef = useRef(false); // skip auto-fit for a drop placement
 
-  // Server state is authoritative: rebuild the whole canvas from each `state`
-  // broadcast (auto-layout), then overlay any user-set positions so drags/drops
-  // survive subsequent broadcasts. Each edge carries an `onDelete` callback.
+  // Server state is authoritative for *which* nodes/edges exist, but positions
+  // are frontend-only and **stable**: once a node has a position we never move
+  // it on a later broadcast. Only brand-new nodes get a position — from the drop
+  // cursor if they were just dropped, else from the deterministic auto-layout.
+  // This is what keeps existing nodes from shifting or vanishing when another
+  // node is added/dropped (and a bad cursor coord can never poison a node).
   useEffect(() => {
     const ids = new Set((arch?.nodes ?? []).map((n) => n.id));
+    const { nodes: n, edges: e } = toFlowElements(arch);
 
-    // A drop adds exactly one node; pin that new id to the cursor position.
-    if (pendingDropRef.current) {
-      const added = [...ids].filter((id) => !knownIdsRef.current.has(id));
-      if (added.length === 1) positionsRef.current.set(added[0], pendingDropRef.current);
-      pendingDropRef.current = null;
+    // Drop the cursor position onto the one genuinely-new node (if a drop is
+    // pending and the coord is valid); everyone else seeds from auto-layout.
+    const drop =
+      pendingDropRef.current && finitePos(pendingDropRef.current)
+        ? pendingDropRef.current
+        : null;
+    pendingDropRef.current = null;
+    for (const node of n) {
+      if (positionsRef.current.has(node.id)) continue; // already placed — leave it
+      const isNew = !knownIdsRef.current.has(node.id);
+      const seed = isNew && drop ? drop : node.position;
+      positionsRef.current.set(node.id, finitePos(seed) ? seed : { x: 0, y: 0 });
     }
     // Forget positions for nodes that no longer exist.
     for (const id of [...positionsRef.current.keys()]) {
       if (!ids.has(id)) positionsRef.current.delete(id);
     }
 
-    const { nodes: n, edges: e } = toFlowElements(arch);
-    setNodes(
-      n.map((node) =>
-        positionsRef.current.has(node.id)
-          ? { ...node, position: positionsRef.current.get(node.id) }
-          : node,
-      ),
-    );
+    setNodes(n.map((node) => ({ ...node, position: positionsRef.current.get(node.id) })));
     setEdges(
       e.map((edge) => ({
         ...edge,
@@ -136,16 +151,15 @@ export default function App() {
       const type = event.dataTransfer.getData("application/nn-layer-type");
       if (!type) return;
       if (rfRef.current) {
-        // Place the new node exactly where it was dropped (graph coords).
-        pendingDropRef.current = rfRef.current.screenToFlowPosition({
-          x: event.clientX,
-          y: event.clientY,
-        });
+        // Place the new node exactly where it was dropped (graph coords),
+        // snapping it onto the column grid when that mode is on.
+        const p = rfRef.current.screenToFlowPosition({ x: event.clientX, y: event.clientY });
+        pendingDropRef.current = snapToColumns ? snap(p) : p;
         suppressFitRef.current = true;
       }
       add(type);
     },
-    [add],
+    [add, snapToColumns],
   );
   const onDragOver = useCallback((event) => {
     event.preventDefault();
@@ -202,6 +216,15 @@ export default function App() {
           <button type="button" className="toolbar__btn" onClick={() => send(proto.resetArchitecture())}>
             Reset
           </button>
+          <button
+            type="button"
+            className={`toolbar__btn toolbar__toggle${snapToColumns ? " is-on" : ""}`}
+            onClick={() => setSnapToColumns((s) => !s)}
+            aria-pressed={snapToColumns}
+            title="Snap nodes to layered columns while dragging"
+          >
+            Snap to columns
+          </button>
           {notice && <span className={`notice notice--${notice.kind}`}>{notice.message}</span>}
         </div>
 
@@ -219,6 +242,8 @@ export default function App() {
           onNodeDragStop={onNodeDragStop}
           onNodeClick={(_, node) => setSelectedId(node.id)}
           onPaneClick={() => setSelectedId(null)}
+          snapToGrid={snapToColumns}
+          snapGrid={SNAP_GRID}
           fitView
           fitViewOptions={{ padding: 0.25, maxZoom: 0.85 }}
           minZoom={0.2}
