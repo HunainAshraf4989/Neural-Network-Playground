@@ -87,18 +87,18 @@ async def _build_cnn(session):
 # tool registration / schema
 # --------------------------------------------------------------------------- #
 EXPECTED_TOOLS = {
-    "add_layer", "update_layer", "remove_layer", "connect_layers",
-    "disconnect_layers", "get_architecture", "validate_architecture",
-    "generate_code", "reset_architecture",
+    "add_layer", "add_layers", "update_layer", "remove_layer", "connect_layers",
+    "connect_layers_batch", "disconnect_layers", "get_catalog", "get_architecture",
+    "validate_architecture", "generate_code", "reset_architecture",
 }
 
 
 @asynctest
-async def test_exactly_nine_tools_registered():
+async def test_all_tools_registered():
     async with harness() as (session, _store, _c):
         tools = (await session.list_tools()).tools
         assert {t.name for t in tools} == EXPECTED_TOOLS
-        assert len(tools) == 9
+        assert len(tools) == len(EXPECTED_TOOLS)
 
 
 @asynctest
@@ -109,9 +109,13 @@ async def test_tool_input_schemas():
         assert set(by_name["update_layer"].inputSchema["required"]) == {"node_id", "params"}
         assert set(by_name["connect_layers"].inputSchema["required"]) == {"from_id", "to_id"}
         assert set(by_name["remove_layer"].inputSchema["required"]) == {"node_id"}
+        assert set(by_name["add_layers"].inputSchema["required"]) == {"layers"}
+        assert set(by_name["connect_layers_batch"].inputSchema["required"]) == {"edges"}
+        # layout is optional on add_layer (only type+params required)
+        assert set(by_name["add_layer"].inputSchema["required"]) == {"type", "params"}
         # reads take no params
-        for name in ("get_architecture", "validate_architecture", "generate_code",
-                     "reset_architecture"):
+        for name in ("get_catalog", "get_architecture", "validate_architecture",
+                     "generate_code", "reset_architecture"):
             assert not by_name[name].inputSchema.get("required")
         # every tool carries a description (agent-facing docs)
         assert all(t.description for t in by_name.values())
@@ -417,9 +421,78 @@ async def test_reset_clears_and_restarts_ids():
         assert ok(await session.call_tool("reset_architecture", {})) == {"reset": True}
         assert c.n == before + 1
         arch = ok(await session.call_tool("get_architecture", {}))
-        assert arch == {"nodes": [], "edges": []}
+        assert arch == {"nodes": [], "edges": [], "layout": {}}
         # id counter restarts at n1
         assert await _add(session, "input", {"shape": [1, 8, 8], "dtype": "float32"}) == "n1"
+
+
+# --------------------------------------------------------------------------- #
+# get_catalog (read, no broadcast)
+# --------------------------------------------------------------------------- #
+@asynctest
+async def test_get_catalog_tool():
+    async with harness() as (session, _store, c):
+        cat = ok(await session.call_tool("get_catalog", {}))
+        assert cat["conv2d"]["category"] == "conv"
+        assert "kernel_size" in cat["conv2d"]["required"]
+        assert cat["maxpool2d"]["optional"]["padding"] == 0
+        assert c.n == 0  # read does not broadcast
+
+
+# --------------------------------------------------------------------------- #
+# add_layers / connect_layers_batch (atomic batches)
+# --------------------------------------------------------------------------- #
+@asynctest
+async def test_add_layers_tool_happy_single_broadcast():
+    async with harness() as (session, _store, c):
+        res = ok(await session.call_tool("add_layers", {"layers": [
+            {"type": "input", "params": {"shape": [3, 8, 8], "dtype": "float32"}},
+            {"type": "relu", "params": {}},
+        ]}))
+        assert res == {"node_ids": ["n1", "n2"]}
+        assert c.n == 1  # one broadcast for the whole batch, not one per node
+
+
+@asynctest
+async def test_add_layers_tool_atomic_error_no_broadcast():
+    async with harness() as (session, _store, c):
+        msg = err(await session.call_tool("add_layers", {"layers": [
+            {"type": "relu", "params": {}},
+            {"type": "bogus", "params": {}},
+        ]}))
+        assert "add_layers failed at index 1" in msg
+        assert c.n == 0  # failed batch does not broadcast
+        assert ok(await session.call_tool("get_architecture", {}))["nodes"] == []
+
+
+@asynctest
+async def test_connect_layers_batch_tool():
+    async with harness() as (session, _store, c):
+        ok(await session.call_tool("add_layers", {"layers": [
+            {"type": "input", "params": {"shape": [1, 8, 8], "dtype": "float32"}},
+            {"type": "relu", "params": {}},
+            {"type": "add", "params": {}},
+        ]}))
+        before = c.n
+        res = ok(await session.call_tool("connect_layers_batch", {"edges": [
+            {"from_id": "n1", "to_id": "n3"},
+            {"from_id": "n2", "to_id": "n3"},
+        ]}))
+        assert res["edges"] == [{"from": "n1", "to": "n3"}, {"from": "n2", "to": "n3"}]
+        assert c.n == before + 1
+
+
+# --------------------------------------------------------------------------- #
+# add_layer layout hint surfaces in get_architecture.layout, not in node params
+# --------------------------------------------------------------------------- #
+@asynctest
+async def test_add_layer_layout_hint_round_trips():
+    async with harness() as (session, _store, _c):
+        ok(await session.call_tool("add_layer",
+                                   {"type": "relu", "params": {}, "layout": {"col": 3, "row": 2}}))
+        arch = ok(await session.call_tool("get_architecture", {}))
+        assert arch["layout"]["n1"] == {"col": 3, "row": 2}
+        assert set(arch["nodes"][0]) == {"id", "type", "params"}
 
 
 # --------------------------------------------------------------------------- #
@@ -433,3 +506,37 @@ async def test_round_trip_build_validate_generate_reset():
         assert ok(await session.call_tool("generate_code", {}))["code"]
         ok(await session.call_tool("reset_architecture", {}))
         assert ok(await session.call_tool("get_architecture", {}))["nodes"] == []
+
+
+# --------------------------------------------------------------------------- #
+# canvas_warning: surfaced through MCP replies when the live canvas is down
+# --------------------------------------------------------------------------- #
+@asynctest
+async def test_canvas_warning_surfaces_on_mutations_and_get_architecture():
+    """When main.py runs MCP-only (websocket port busy), build_mcp is handed a
+    canvas_warning; it must ride along on every mutation + get_architecture reply
+    so the agent — whose only channel is the MCP result, never stderr — learns
+    the UI won't reflect its edits. Other reads stay clean."""
+    warn = "live canvas unavailable: websocket port 8765 is already in use"
+    store = ArchitectureStore()
+    mcp = build_mcp(store, broadcast=_Counter(), canvas_warning=warn)
+    async with connect(mcp) as session:
+        res = ok(await session.call_tool(
+            "add_layer", {"type": "input", "params": {"shape": [1, 8, 8], "dtype": "float32"}}))
+        assert res["node_id"] == "n1"
+        assert warn in res["warnings"]                 # mutation carries it
+        arch = ok(await session.call_tool("get_architecture", {}))
+        assert warn in arch["warnings"]                # reading graph state too
+        cat = ok(await session.call_tool("get_catalog", {}))
+        assert "warnings" not in cat                   # unrelated reads stay clean
+
+
+@asynctest
+async def test_no_canvas_warning_when_canvas_up():
+    """Default (canvas up): replies are unchanged — no warnings key injected."""
+    async with harness() as (session, _store, _c):  # harness builds mcp w/o canvas_warning
+        res = ok(await session.call_tool(
+            "add_layer", {"type": "input", "params": {"shape": [1, 8, 8], "dtype": "float32"}}))
+        assert res == {"node_id": "n1"}
+        arch = ok(await session.call_tool("get_architecture", {}))
+        assert "warnings" not in arch

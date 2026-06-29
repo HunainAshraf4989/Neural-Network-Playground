@@ -116,7 +116,7 @@ AppState = {
 
 **ID scheme:** incremental string IDs (`"n1"`, `"n2"`, ...) from a counter on the store, not UUIDs. Readable in logs and demos. Counter resets to 0 on `reset_architecture`.
 
-**Positions are not part of this schema.** No `x`/`y` on a node. Layout is purely a frontend concern, recomputed on every state update — see §11.
+**Positions are not part of the node schema.** No `x`/`y` on a node, so the validator and codegen never see geometry. Pixel layout is a frontend concern. (Updated since the original draft — see CLAUDE.md invariant 8: positions are now frontend-owned and *stable* with column placement, and the store carries a *separate* optional `layout` hint map `{id: {col,row}}` that an agent may set, broadcast alongside `nodes`/`edges` but kept out of node params.)
 
 ## 8. Layer catalog
 
@@ -153,9 +153,14 @@ Graph rules that apply regardless of type:
 - A node with no outgoing edges is a **terminal node**. If exactly one exists, `generate_code`'s forward returns that single tensor. If more than one exists, it returns a tuple of all of them, ordered by ascending node id.
 - A node unreachable from the `input` node (orphaned mid-edit) is not an error. It's excluded from codegen/validation and surfaced as a non-fatal warning string, so an agent mid-design isn't blocked by a scratch node it hasn't wired up yet.
 
-## 9. MCP tool surface (9 tools)
+## 9. MCP tool surface
 
 All tool handlers call into `ArchitectureStore` methods — never duplicate this logic in `ws_app.py`.
+
+> Extended since the original 9-tool draft (see CLAUDE.md "Agent tool surface"): the set is now **12
+> tools** — the original nine plus `get_catalog` (catalog discovery), `add_layers` and
+> `connect_layers_batch` (atomic batch build). `add_layer`/`add_layers` also accept an optional
+> `layout` hint. The original nine below are unchanged in behaviour.
 
 **`add_layer(type: str, params: dict) -> {node_id: str}`**
 Validates `type` against the catalog and `params` against that type's required/optional fields (applying defaults for anything omitted). Rejects a second `input` node — error message tells the agent to `remove_layer` the existing one first if it wants to redefine the input.
@@ -239,8 +244,8 @@ Server replies to the originating client only with `{"type": "ack", "ok": true}`
 ## 13. Frontend spec
 
 - One generic custom node component (`LayerNode.jsx`) parameterized by `data.type`, rendering the type name and a few key params. `input` nodes render with zero input handles; every other node has exactly one input handle and one output handle — including merge nodes, since the diagramming library allows multiple edges into a single target handle natively, so no special multi-handle UI is needed.
-- **Auto-layout, not manual dragging-to-position.** Since the shared state has no `x`/`y` (§7), the frontend must recompute layout on every `state` message. Use a simple deterministic layered layout: BFS distance from the `input` node = column index; order within a column = node id order. Write this as a small manual function (`layout.js`) rather than pulling in a layout dependency like `dagre` — good enough for a PoC and one less dependency.
-- **Palette** (`LayerPalette.jsx`): a sidebar listing every catalog type. Dragging one onto the canvas sends `add_layer` with that type and its schema defaults; the drop coordinates are discarded (auto-layout takes over on the next state push).
+- **Edge-driven column layout, frontend-owned** *(see CLAUDE.md invariant 8 and `frontend/src/layout.js`)*. The node schema still has no `x`/`y` (§7); pixel positions are recomputed every broadcast: column = distance from the `input` node, so wiring `n1 -> n2` places `n2` one column to the right of `n1` (input leftmost). Two overrides layer on top: a node the user **dragged** keeps its position; else an agent **layout hint** `{col,row}` wins. Dragging snaps to the column/row grid. A small manual function (`layout.js`), no `dagre` dependency.
+- **Palette** (`LayerPalette.jsx`): a sidebar listing every catalog type. Clicking or dragging one onto the canvas sends `add_layer` with that type and its schema defaults; the edge-driven layout positions it (column 0 until wired, then it flows to the right of its source).
 - **Params panel** (`ParamsPanel.jsx`): clicking a node opens a form of its current params (basic text/number inputs per field) with a Save button that sends `update_layer`.
 - Dragging an edge between two handles sends `connect_layers`. Selecting a node and pressing delete sends `remove_layer`. A toolbar button sends `reset_architecture`.
 
@@ -308,7 +313,7 @@ Quick-reference list of every non-obvious call, so nothing here needs re-decidin
 - Validation dummy batch size is fixed at N=2.
 - Int64 dummy inputs are bounded by the first downstream `embedding`'s `num_embeddings` (default 1000 if none exists).
 - Validation errors are structured `LayerExecutionError` objects with `node_id`/`layer_type`/`original` fields — never parsed out of generic error strings.
-- Node `(x, y)` position is not part of the shared schema; layout is frontend-only and recomputed every update.
+- Node `(x, y)` position is not part of the node schema; pixel layout is frontend-owned (stable column placement). The store does keep a *separate* optional `layout` hint map outside node params (see CLAUDE.md invariant 8).
 - Backend stdout is reserved exclusively for MCP protocol framing — all logs go to stderr.
 - One `ArchitectureStore` is the only mutation path; MCP tools and the websocket handler both call into it, never duplicate logic.
 - Orphan nodes (unreachable from `input`) are allowed to exist; they're excluded from codegen/validation with a warning, not a hard error.

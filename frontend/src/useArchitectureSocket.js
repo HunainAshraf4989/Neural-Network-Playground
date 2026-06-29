@@ -12,7 +12,7 @@ const DEFAULT_URL = "ws://localhost:8765/ws";
 const RECONNECT_MS = 1500;
 
 export function useArchitectureSocket(url = DEFAULT_URL) {
-  const [arch, setArch] = useState({ nodes: [], edges: [] });
+  const [arch, setArch] = useState({ nodes: [], edges: [], layout: {} });
   const [connected, setConnected] = useState(false);
   const [notice, setNotice] = useState(null); // {kind:"error"|"ack", message}
   const wsRef = useRef(null);

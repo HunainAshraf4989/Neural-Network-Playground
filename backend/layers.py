@@ -91,25 +91,50 @@ CATALOG = {
 MERGE_TYPES = {"add", "concat"}
 
 
+def describe_catalog():
+    """Return a JSON-serialisable view of the whole catalog: ``{type: {category,
+    required: [...], optional: {name: default}}}``. This is what the agent-facing
+    ``get_catalog`` tool exposes so an LLM can discover valid types and params
+    instead of probing by trial-and-error.
+    """
+    return {
+        layer_type: {
+            "category": spec["category"],
+            "required": list(spec["required"]),
+            "optional": dict(spec["optional"]),
+        }
+        for layer_type, spec in CATALOG.items()
+    }
+
+
 def validate_and_merge(layer_type, params):
     """Structurally validate ``params`` for ``layer_type`` and return a merged
     dict with all defaults applied. Raises ``ValueError`` on any structural
     problem. No tensor-shape checking happens here.
+
+    Errors are written for an agent reader: an unknown type lists the known
+    types, and a missing-param error names *every* missing required param at once
+    (not just the first), so the caller fixes one call instead of looping.
     """
     if layer_type not in CATALOG:
-        raise ValueError(f"unknown layer type '{layer_type}'")
+        known = ", ".join(sorted(CATALOG))
+        raise ValueError(f"unknown layer type '{layer_type}'; known types: {known}")
     spec = CATALOG[layer_type]
 
-    merged = {}
-    for name in spec["required"]:
-        if name not in params:
-            raise ValueError(f"layer '{layer_type}' missing required param '{name}'")
-        merged[name] = params[name]
+    missing = [name for name in spec["required"] if name not in params]
+    if missing:
+        raise ValueError(
+            f"layer '{layer_type}' missing required param(s): {missing}; "
+            f"required: {list(spec['required'])}")
+
+    merged = {name: params[name] for name in spec["required"]}
     for name, default in spec["optional"].items():
         merged[name] = params.get(name, default)
 
     known = set(spec["required"]) | set(spec["optional"])
     unknown = sorted(set(params) - known)
     if unknown:
-        raise ValueError(f"layer '{layer_type}' got unknown param(s): {unknown}")
+        raise ValueError(
+            f"layer '{layer_type}' got unknown param(s): {unknown}; "
+            f"allowed: {sorted(known)}")
     return merged

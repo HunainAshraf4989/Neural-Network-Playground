@@ -25,9 +25,11 @@ import asyncio
 import functools
 import json
 import os
+import socket
 import subprocess
 import sys
 import threading
+import time
 
 import pytest
 
@@ -71,8 +73,12 @@ def test_stdout_is_pure_jsonrpc_and_logs_go_to_stderr():
     ]
     expected_ids = {1, 2, 3, 4, 5, 6, 7}
 
+    # WS_PORT=0 → a free ephemeral port, so this test never collides with a
+    # running instance on the default port (which would flip the server into
+    # MCP-only mode and change the startup log this test asserts on).
+    env = {**os.environ, "WS_PORT": "0"}
     p = subprocess.Popen([PY, "main.py"], cwd=BACKEND, stdin=subprocess.PIPE,
-                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
     err_chunks = []
     threading.Thread(target=lambda: err_chunks.extend(p.stderr), daemon=True).start()
 
@@ -127,6 +133,82 @@ def test_stdout_is_pure_jsonrpc_and_logs_go_to_stderr():
     assert bad["result"]["isError"] is True
 
 
+def test_websocket_bind_failure_does_not_kill_mcp():
+    """Robustness gate: if the websocket port is already taken (a stale instance,
+    a second session), the MCP stdio channel — the agent's only contract — must
+    still come up and answer. We occupy a port, point the server at it via
+    ``WS_PORT``, and assert ``tools/list`` still returns over stdio."""
+    busy = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    busy.bind(("127.0.0.1", 0))
+    busy.listen()
+    busy_port = busy.getsockname()[1]
+
+    env = os.environ.copy()
+    env["WS_PORT"] = str(busy_port)
+
+    requests = [
+        {"jsonrpc": "2.0", "id": 1, "method": "initialize",
+         "params": {"protocolVersion": "2025-06-18", "capabilities": {},
+                    "clientInfo": {"name": "robust", "version": "0"}}},
+        {"jsonrpc": "2.0", "method": "notifications/initialized"},
+        {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+        # a real mutation must carry the "live canvas unavailable" warning back to
+        # the agent (the agent never sees stderr — the MCP reply is its only channel)
+        {"jsonrpc": "2.0", "id": 3, "method": "tools/call",
+         "params": {"name": "add_layer",
+                    "arguments": {"type": "input",
+                                  "params": {"shape": [1, 8, 8], "dtype": "float32"}}}},
+    ]
+
+    p = subprocess.Popen([PY, "main.py"], cwd=BACKEND, stdin=subprocess.PIPE,
+                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
+    out_lines, err_chunks = [], []
+    threading.Thread(target=lambda: out_lines.extend(iter(p.stdout.readline, "")), daemon=True).start()
+    threading.Thread(target=lambda: err_chunks.extend(p.stderr), daemon=True).start()
+
+    def reply_for(req_id):
+        for ln in list(out_lines):
+            try:
+                obj = json.loads(ln)
+            except json.JSONDecodeError:
+                continue
+            if obj.get("id") == req_id and "result" in obj:
+                return obj
+        return None
+
+    try:
+        for r in requests:
+            p.stdin.write(json.dumps(r) + "\n")
+        p.stdin.flush()
+
+        # wait for the add_layer reply (id 3); it follows tools/list (id 2), so
+        # seeing it means both arrived
+        deadline, mutate = time.time() + 15, None
+        while time.time() < deadline:
+            mutate = reply_for(3)
+            if mutate:
+                break
+            time.sleep(0.1)
+
+        tools = reply_for(2)
+        assert tools is not None, "MCP did not answer tools/list despite the websocket bind failing"
+        assert len(tools["result"]["tools"]) == 12
+        assert mutate is not None, "MCP did not answer add_layer despite the websocket bind failing"
+        warnings = mutate["result"]["structuredContent"]["warnings"]
+        assert any("canvas unavailable" in w.lower() for w in warnings), warnings
+    finally:
+        p.stdin.close()
+        busy.close()
+        try:
+            p.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            p.kill()
+
+    errlog = "".join(err_chunks)
+    # the busy port was detected and logged (not swallowed), and MCP kept serving
+    assert "mcp-only" in errlog.lower() or "already in use" in errlog.lower()
+
+
 @asynctest
 async def test_all_nine_tools_round_trip_over_real_stdio():
     """Build → validate → generate → mutate → reset through the real stdio client."""
@@ -138,11 +220,11 @@ async def test_all_nine_tools_round_trip_over_real_stdio():
         return json.loads(res.content[0].text)
 
     params = StdioServerParameters(command=PY, args=["main.py"], cwd=BACKEND,
-                                   env=os.environ.copy())
+                                   env={**os.environ, "WS_PORT": "0"})  # free port: no collision
     async with stdio_client(params) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
-            assert len((await session.list_tools()).tools) == 9
+            assert len((await session.list_tools()).tools) == 12
 
             async def add(t, prm=None):
                 return payload(await session.call_tool(

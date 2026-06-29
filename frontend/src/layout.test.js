@@ -1,11 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { computeLayout } from "./layout.js";
+import { computeLayout, snapToCell, colOf, rowOf, COL_GAP, ROW_GAP } from "./layout.js";
 
-// Helpers to read column/row out of the {x,y} positions.
-const COL_GAP = 240;
-const ROW_GAP = 110;
 const col = (p) => p.x / COL_GAP;
 const row = (p) => p.y / ROW_GAP;
+const cell = (c, r) => ({ x: c * COL_GAP, y: r * ROW_GAP });
 
 describe("computeLayout", () => {
   it("returns empty for no nodes", () => {
@@ -18,7 +16,7 @@ describe("computeLayout", () => {
     expect(pos.n1).toEqual({ x: 0, y: 0 });
   });
 
-  it("assigns columns by BFS distance from input along a chain", () => {
+  it("connecting n1->n2 puts n2 one column to the right of n1 (edge-driven)", () => {
     const arch = {
       nodes: [
         { id: "n1", type: "input" },
@@ -37,7 +35,6 @@ describe("computeLayout", () => {
   });
 
   it("stacks nodes sharing a column by node-id order", () => {
-    // input → n2 and input → n3 ; both at column 1, ordered n2 above n3.
     const arch = {
       nodes: [
         { id: "n1", type: "input" },
@@ -57,8 +54,6 @@ describe("computeLayout", () => {
   });
 
   it("uses MAX distance so a merge sits right of its deepest predecessor", () => {
-    // n1→n2→n3→n5 (skip) and n1→n4→n5 ; n5 should be at column 4 (via the long
-    // branch), never column 2 (via the short branch).
     const arch = {
       nodes: [
         { id: "n1", type: "input" },
@@ -79,12 +74,12 @@ describe("computeLayout", () => {
     expect(col(pos.n5)).toBe(3);
   });
 
-  it("puts nodes with no path from input at column 0 (still visible)", () => {
+  it("puts a not-yet-wired node at column 0 (still visible, then flows right once wired)", () => {
     const arch = {
       nodes: [
         { id: "n1", type: "input" },
         { id: "n2", type: "conv2d" }, // connected
-        { id: "n3", type: "relu" }, // island, no edges
+        { id: "n3", type: "relu" }, // island, no edges yet
       ],
       edges: [{ from: "n1", to: "n2" }],
     };
@@ -131,5 +126,17 @@ describe("computeLayout", () => {
       ],
     };
     expect(computeLayout(arch)).toEqual(computeLayout(arch));
+  });
+});
+
+describe("grid helpers", () => {
+  it("snapToCell snaps to the nearest cell and clamps to col/row >= 0", () => {
+    expect(snapToCell({ x: COL_GAP * 2 + 5, y: ROW_GAP * 3 - 4 })).toEqual(cell(2, 3));
+    expect(snapToCell({ x: -50, y: -999 })).toEqual(cell(0, 0));
+  });
+
+  it("colOf / rowOf recover the column and row from a position", () => {
+    expect(colOf(cell(4, 2))).toBe(4);
+    expect(rowOf(cell(4, 2))).toBe(2);
   });
 });

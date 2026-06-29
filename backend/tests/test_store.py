@@ -295,7 +295,7 @@ async def test_reset_architecture_clears_and_resets_counter():
     await s.add_layer("relu", {})
     assert (await s.reset_architecture()) == {"reset": True}
     state = await s.get_architecture()
-    assert state == {"nodes": [], "edges": []}
+    assert state == {"nodes": [], "edges": [], "layout": {}}
     assert (await s.add_layer("relu", {}))["node_id"] == "n1"   # counter back to 0
 
 
@@ -381,3 +381,157 @@ async def test_orphan_node_allowed_and_warned():
     res = await s.validate_architecture()
     assert res["valid"] is True
     assert any(orphan in w for w in res["warnings"])
+
+
+# --------------------------------------------------------------------------- #
+# richer errors (agent-facing): list valid types / all missing params at once
+# --------------------------------------------------------------------------- #
+@asynctest
+async def test_unknown_type_error_lists_known_types():
+    s = ArchitectureStore()
+    with pytest.raises(ValueError, match="known types:") as ei:
+        await s.add_layer("conv", {})
+    assert "conv2d" in str(ei.value)  # the real type the caller probably meant
+
+
+@asynctest
+async def test_missing_params_error_names_all_missing_at_once():
+    s = ArchitectureStore()
+    with pytest.raises(ValueError) as ei:
+        await s.add_layer("conv2d", {})  # missing in/out_channels AND kernel_size
+    msg = str(ei.value)
+    assert "missing required param" in msg
+    for name in ("in_channels", "out_channels", "kernel_size"):
+        assert name in msg
+
+
+# --------------------------------------------------------------------------- #
+# get_catalog
+# --------------------------------------------------------------------------- #
+@asynctest
+async def test_get_catalog_shape():
+    s = ArchitectureStore()
+    cat = await s.get_catalog()
+    assert cat["conv2d"]["category"] == "conv"
+    assert "in_channels" in cat["conv2d"]["required"]
+    assert cat["conv2d"]["optional"]["stride"] == 1
+    assert cat["concat"]["required"] == ["dim"]
+    assert "input" in cat
+
+
+# --------------------------------------------------------------------------- #
+# add_layers (atomic batch)
+# --------------------------------------------------------------------------- #
+@asynctest
+async def test_add_layers_happy_returns_ids_in_order():
+    s = ArchitectureStore()
+    res = await s.add_layers([
+        {"type": "input", "params": {"shape": [3, 8, 8], "dtype": "float32"}},
+        {"type": "conv2d", "params": {"in_channels": 3, "out_channels": 8, "kernel_size": 3}},
+        {"type": "relu", "params": {}},
+    ])
+    assert res == {"node_ids": ["n1", "n2", "n3"]}
+    assert [n["id"] for n in (await s.get_architecture())["nodes"]] == ["n1", "n2", "n3"]
+
+
+@asynctest
+async def test_add_layers_is_atomic_on_failure():
+    s = ArchitectureStore()
+    await _input(s)  # n1 already exists
+    with pytest.raises(ValueError, match="add_layers failed at index 1"):
+        await s.add_layers([
+            {"type": "relu", "params": {}},          # ok
+            {"type": "not_a_layer", "params": {}},   # blows up -> roll back the whole batch
+            {"type": "gelu", "params": {}},
+        ])
+    # nothing from the batch landed, and no ids were consumed past n1
+    assert [n["id"] for n in (await s.get_architecture())["nodes"]] == ["n1"]
+    assert (await s.add_layer("relu", {}))["node_id"] == "n2"
+
+
+@asynctest
+async def test_add_layers_second_input_in_batch_rolls_back():
+    s = ArchitectureStore()
+    with pytest.raises(ValueError, match="input node already exists"):
+        await s.add_layers([
+            {"type": "input", "params": {"shape": [1, 8, 8], "dtype": "float32"}},
+            {"type": "input", "params": {"shape": [1, 8, 8], "dtype": "float32"}},
+        ])
+    assert (await s.get_architecture())["nodes"] == []
+
+
+@asynctest
+async def test_add_layers_rejects_empty():
+    s = ArchitectureStore()
+    with pytest.raises(ValueError, match="non-empty list"):
+        await s.add_layers([])
+
+
+# --------------------------------------------------------------------------- #
+# connect_layers_batch (atomic batch)
+# --------------------------------------------------------------------------- #
+@asynctest
+async def test_connect_layers_batch_happy():
+    s = ArchitectureStore()
+    ids = (await s.add_layers([
+        {"type": "input", "params": {"shape": [1, 8, 8], "dtype": "float32"}},
+        {"type": "relu", "params": {}},
+        {"type": "flatten", "params": {}},
+    ]))["node_ids"]
+    res = await s.connect_layers_batch([
+        {"from_id": ids[0], "to_id": ids[1]},
+        {"from_id": ids[1], "to_id": ids[2]},
+    ])
+    assert res == {"edges": [{"from": ids[0], "to": ids[1]}, {"from": ids[1], "to": ids[2]}]}
+
+
+@asynctest
+async def test_connect_layers_batch_is_atomic_on_failure():
+    s = ArchitectureStore()
+    n1 = await _input(s)
+    n2 = (await s.add_layer("relu", {}))["node_id"]
+    with pytest.raises(ValueError, match="connect_layers_batch failed at index 1"):
+        await s.connect_layers_batch([
+            {"from_id": n1, "to_id": n2},     # ok
+            {"from_id": n2, "to_id": "n99"},  # unknown target -> roll back the batch
+        ])
+    # the first edge was rolled back too
+    assert (await s.get_architecture())["edges"] == []
+
+
+# --------------------------------------------------------------------------- #
+# layout-hint channel (separate from node params; never in nodes)
+# --------------------------------------------------------------------------- #
+@asynctest
+async def test_layout_hint_stored_separately_from_params():
+    s = ArchitectureStore()
+    nid = (await s.add_layer("relu", {}, layout={"col": 2, "row": 1}))["node_id"]
+    arch = await s.get_architecture()
+    assert arch["layout"][nid] == {"col": 2, "row": 1}
+    # geometry must NOT leak into the node schema
+    assert set(arch["nodes"][0]) == {"id", "type", "params"}
+    assert "col" not in arch["nodes"][0]["params"]
+
+
+@asynctest
+async def test_layout_hint_dropped_on_remove_and_cleared_on_reset():
+    s = ArchitectureStore()
+    nid = (await s.add_layer("relu", {}, layout={"col": 1}))["node_id"]
+    await s.remove_layer(nid)
+    assert (await s.get_architecture())["layout"] == {}
+    nid2 = (await s.add_layer("gelu", {}, layout={"row": 3}))["node_id"]
+    await s.reset_architecture()
+    assert (await s.get_architecture())["layout"] == {}
+    assert nid2  # silence unused
+
+
+@asynctest
+async def test_layout_hint_validation():
+    s = ArchitectureStore()
+    with pytest.raises(ValueError, match="non-negative integer"):
+        await s.add_layer("relu", {}, layout={"col": -1})
+    with pytest.raises(ValueError, match="unknown key"):
+        await s.add_layer("relu", {}, layout={"x": 5})
+    # empty/None hint is fine and simply records nothing
+    nid = (await s.add_layer("relu", {}, layout={}))["node_id"]
+    assert nid not in (await s.get_architecture())["layout"]

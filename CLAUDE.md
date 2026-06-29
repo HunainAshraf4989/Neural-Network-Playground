@@ -46,7 +46,17 @@ always use /karpathy-guidelines skill.
    down the main process. Errors come back as structured `LayerExecutionError`
    (`node_id`/`layer_type`/`original`), never parsed from generic strings.
 8. **IDs** are an incremental counter (`n1`, `n2`, …), reset to 0 on `reset_architecture`. No UUIDs.
-   Node `(x,y)` positions are NOT in the shared schema — layout is frontend-only, recomputed each update.
+   Node `(x,y)` pixel positions are NEVER in the node schema (`{id,type,params}`), so the validator and
+   codegen never see geometry. Two things layer on top of that, both kept *out* of node params:
+   - The frontend owns pixel layout, recomputed every broadcast by a deterministic **edge-driven**
+     layout (`frontend/src/layout.js` `computeLayout`): column = distance from the `input` node, so wiring
+     `n1 -> n2` puts `n2` one column right of `n1` (and the `input` node is leftmost). Two overrides are
+     layered on top, in order: a node the user **dragged** keeps its dragged position; else an agent
+     **layout hint** `{col,row}` wins. Dragging snaps to the column/row grid.
+   - The store keeps a **separate** optional `layout` map (`id -> {col,row}`) that an agent may set via
+     `add_layer`/`add_layers`. It's broadcast inside `get_architecture` as a top-level `layout` key
+     (alongside `nodes`/`edges`) purely as a placement *hint* for the canvas — it never reaches the
+     validator or codegen (those read `_snapshot()`, which is nodes+edges only).
 
 ## Layer catalog scope (this build)
 
@@ -58,6 +68,22 @@ input/conv/pooling/norm/activation/recurrent/attention/merge plus four buckets f
 none of those: `linear`, `shape` (flatten), `regularization` (dropout), `embedding`. Category is
 frontend-only metadata, enforced by nothing. Adding a layer = one schema entry in `layers.py` + one
 codegen mapping (`_CONSTRUCTORS`) in `codegen.py`.
+
+## Agent tool surface (MCP)
+
+12 tools, all thin adapters over one `ArchitectureStore` method (no graph logic in `mcp_tools.py`):
+`add_layer`, `add_layers`, `update_layer`, `remove_layer`, `connect_layers`, `connect_layers_batch`,
+`disconnect_layers`, `reset_architecture` (mutations, broadcast on success); `get_catalog`,
+`get_architecture`, `validate_architecture`, `generate_code` (reads, never broadcast).
+
+Built for an agent working **cold** (no repo access):
+- **`get_catalog`** is the discovery surface — every type with its `category`, `required`, and
+  `optional` params + defaults. Call it first instead of probing by trial-and-error.
+- **Errors are written to be acted on**: an unknown type lists the known types; a missing-param error
+  names *all* missing required params at once (not one per round-trip).
+- **`add_layers` / `connect_layers_batch`** build a whole network in one **atomic** call each (all-or-
+  nothing rollback), so a 100+ node model isn't hundreds of round-trips.
+- **`add_layer`/`add_layers`** take an optional `layout` hint `{col,row}` (see invariant 8).
 
 ## Run commands
 
@@ -71,6 +97,15 @@ MODE=standalone /home/hunain/base/bin/python backend/main.py
 # Frontend
 cd frontend && npm install && npm run dev   # connects to ws://localhost:8765/ws
 ```
+
+**Busy `:8765` (a stale/duplicate backend already running):** full mode does NOT
+fight for the port. It keeps serving MCP (the agent's only contract) but runs
+*without* the live canvas, and threads a `canvas_warning` into `build_mcp` so
+**every mutation + `get_architecture` reply carries a "live canvas unavailable"
+warning** — the agent's only channel is the MCP response (never stderr), so this
+is how it learns the UI won't reflect its edits. A busy port means a *rival*
+in-memory store owns the canvas; the fix is to stop the other backend (or set
+`WS_PORT`), not to run two stores. (Separate processes never share the store.)
 
 ## Build order & status
 

@@ -16,8 +16,9 @@ and proves the two things only the combined process can show:
    asserts every stdout line is a JSON-RPC 2.0 frame and uvicorn's logs landed on
    stderr instead.
 
-Both tests bind the real port (8765) and fully tear the server down before the
-next starts, so they must not run concurrently with a live server on that port.
+Each test binds its own free ephemeral port (so it never collides with a server
+already running on the default port) and fully tears the server down before the
+next starts.
 """
 
 import asyncio
@@ -34,18 +35,27 @@ import pytest
 
 PY = sys.executable
 BACKEND = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-WS_URL = "ws://localhost:8765/ws"
 
 
-def _env():
-    """Full mode (no MODE) with the request log routed to a throwaway file."""
+def _free_port():
+    """Reserve a free ephemeral port, then release it for main.py to bind. The
+    tiny TOCTOU window is fine for a test, and a dedicated port keeps these tests
+    from colliding with any server already running on the default port."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def _env(port):
+    """Full mode (no MODE) on a dedicated port, request log to a throwaway file."""
     env = os.environ.copy()
     env.pop("MODE", None)
+    env["WS_PORT"] = str(port)
     env["LOG_FILE"] = os.path.join(BACKEND, "_scratch", "test_ws_stdio.log")
     return env
 
 
-def _wait_for_port(host="localhost", port=8765, timeout=15.0):
+def _wait_for_port(port, host="localhost", timeout=15.0):
     deadline = time.time() + timeout
     while time.time() < deadline:
         with socket.socket() as s:
@@ -77,15 +87,17 @@ async def test_cross_surface_sync_mcp_and_ws_share_one_store():
     async def recv(ws):
         return json.loads(await asyncio.wait_for(ws.recv(), timeout=10))
 
-    params = StdioServerParameters(command=PY, args=["main.py"], cwd=BACKEND, env=_env())
+    port = _free_port()
+    ws_url = f"ws://localhost:{port}/ws"
+    params = StdioServerParameters(command=PY, args=["main.py"], cwd=BACKEND, env=_env(port))
     async with stdio_client(params) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
-            assert _wait_for_port(), "websocket server never came up in full mode"
+            assert _wait_for_port(port), "websocket server never came up in full mode"
 
-            async with websockets.connect(WS_URL) as ws:
+            async with websockets.connect(ws_url) as ws:
                 # initial state on connect — empty
-                assert (await recv(ws))["data"] == {"nodes": [], "edges": []}
+                assert (await recv(ws))["data"] == {"nodes": [], "edges": [], "layout": {}}
 
                 # (1) MCP mutation must broadcast to the ws client
                 payload(await session.call_tool(
@@ -134,7 +146,9 @@ def test_full_mode_stdout_is_pure_jsonrpc_despite_uvicorn():
     ]
     expected_ids = {1, 2, 3, 4, 5}
 
-    p = subprocess.Popen([PY, "main.py"], cwd=BACKEND, env=_env(),
+    port = _free_port()
+    ws_url = f"ws://localhost:{port}/ws"
+    p = subprocess.Popen([PY, "main.py"], cwd=BACKEND, env=_env(port),
                          stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                          stderr=subprocess.PIPE, text=True)
     err_chunks = []
@@ -148,8 +162,8 @@ def test_full_mode_stdout_is_pure_jsonrpc_despite_uvicorn():
         # generate uvicorn activity: a real ws client connecting + mutating
         # exercises the access path that defaults to stdout. Any leak it produces
         # is caught in the stdout drain below.
-        assert _wait_for_port(), "websocket server never came up in full mode"
-        with ws_connect(WS_URL) as ws:
+        assert _wait_for_port(port), "websocket server never came up in full mode"
+        with ws_connect(ws_url) as ws:
             json.loads(ws.recv())  # initial state (already has n1, n2 from MCP)
             ws.send(json.dumps({"type": "add_layer", "layer_type": "dropout",
                                 "params": {}}))

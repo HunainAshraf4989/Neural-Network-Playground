@@ -12,8 +12,11 @@ correctness is decided **exclusively** by real execution in ``validator.py`` —
 never here. Structural violations are surfaced as ``ValueError``; the adapters
 turn those into MCP/websocket error responses.
 
-Node schema is the §7 data model: ``{"id", "type", "params"}``. Positions are NOT
-stored — layout is a frontend concern, recomputed on every state push.
+Node schema is the §7 data model: ``{"id", "type", "params"}`` — geometry never
+lives inside a node, so the validator and codegen never see it. The store does
+keep an *optional, separate* ``layout`` map (id -> {col, row}) that an agent may
+set to hint placement; it is broadcast alongside the graph but kept out of node
+params, so it can't affect validation or generated code (relaxed invariant 8).
 """
 
 import asyncio
@@ -28,6 +31,7 @@ class ArchitectureStore:
     def __init__(self):
         self.nodes = []          # list[{"id", "type", "params"}], creation order
         self.edges = []          # list[{"from", "to"}], insertion order (matters for concat)
+        self.layout = {}         # id -> {col?, row?}: optional frontend placement hints
         self._id_counter = 0     # n1, n2, ...; reset to 0 on reset_architecture
         self._lock = asyncio.Lock()
 
@@ -36,6 +40,31 @@ class ArchitectureStore:
     def _next_id(self):
         self._id_counter += 1
         return f"n{self._id_counter}"
+
+    @staticmethod
+    def _clean_layout(layout):
+        """Validate an optional placement hint and return the sanitised dict (only
+        non-negative integer ``col``/``row`` keys). ``None``/``{}`` -> ``{}``.
+        Geometry never enters node params — this is a separate hint channel.
+        """
+        if layout is None:
+            return {}
+        if not isinstance(layout, dict):
+            raise ValueError(
+                f"layout must be an object with optional integer 'col'/'row', "
+                f"got {type(layout).__name__}")
+        unknown = sorted(set(layout) - {"col", "row"})
+        if unknown:
+            raise ValueError(f"layout got unknown key(s): {unknown}; allowed: 'col', 'row'")
+        cleaned = {}
+        for key in ("col", "row"):
+            if layout.get(key) is None:
+                continue
+            value = layout[key]
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError(f"layout '{key}' must be a non-negative integer, got {value!r}")
+            cleaned[key] = value
+        return cleaned
 
     def _node(self, node_id):
         return next((n for n in self.nodes if n["id"] == node_id), None)
@@ -64,21 +93,55 @@ class ArchitectureStore:
 
     # -- the 9 operations ---------------------------------------------------
 
-    async def add_layer(self, layer_type, params):
+    def _add_one(self, layer_type, params, layout=None):
+        """Validate and append one node (caller holds the lock). Returns its id.
+        Used by both ``add_layer`` and the batched ``add_layers``."""
+        if not isinstance(params, dict):
+            raise ValueError(f"params must be an object, got {type(params).__name__}")
+        if layer_type == "input" and any(n["type"] == "input" for n in self.nodes):
+            raise ValueError(
+                "an input node already exists; remove_layer the existing one "
+                "first to redefine the input")
+        merged = layers.validate_and_merge(layer_type, params)
+        hint = self._clean_layout(layout)
+        node_id = self._next_id()
+        self.nodes.append({"id": node_id, "type": layer_type, "params": merged})
+        if hint:
+            self.layout[node_id] = hint
+        return node_id
+
+    async def add_layer(self, layer_type, params, layout=None):
         """Add a node. Validates type+params against the catalog (applying
-        defaults). Rejects a second ``input`` node.
+        defaults). Rejects a second ``input`` node. ``layout`` is an optional
+        ``{col, row}`` placement hint stored outside node params.
         """
         async with self._lock:
-            if not isinstance(params, dict):
-                raise ValueError(f"params must be an object, got {type(params).__name__}")
-            if layer_type == "input" and any(n["type"] == "input" for n in self.nodes):
-                raise ValueError(
-                    "an input node already exists; remove_layer the existing one "
-                    "first to redefine the input")
-            merged = layers.validate_and_merge(layer_type, params)
-            node_id = self._next_id()
-            self.nodes.append({"id": node_id, "type": layer_type, "params": merged})
-            return {"node_id": node_id}
+            return {"node_id": self._add_one(layer_type, params, layout)}
+
+    async def add_layers(self, specs):
+        """Add many nodes in one **atomic** call. ``specs`` is a list of
+        ``{type, params, layout?}``. Either every node is added (returning ids in
+        order) or, on the first invalid spec, nothing is — the graph is rolled
+        back so a partial batch never lands. Returns ``{node_ids}``.
+        """
+        if not isinstance(specs, list) or not specs:
+            raise ValueError("add_layers expects a non-empty list of layer specs")
+        async with self._lock:
+            base_count, base_counter = len(self.nodes), self._id_counter
+            added = []
+            try:
+                for i, spec in enumerate(specs):
+                    if not isinstance(spec, dict) or "type" not in spec:
+                        raise ValueError(f"spec must be an object with a 'type' key, got {spec!r}")
+                    added.append(self._add_one(
+                        spec["type"], spec.get("params", {}), spec.get("layout")))
+            except ValueError as err:
+                del self.nodes[base_count:]          # roll back appended nodes
+                self._id_counter = base_counter      # and the ids they consumed
+                for nid in added:
+                    self.layout.pop(nid, None)
+                raise ValueError(f"add_layers failed at index {len(added)}: {err}") from err
+            return {"node_ids": added}
 
     async def update_layer(self, node_id, params):
         """Merge ``params`` into the node's existing params (partial update) and
@@ -103,35 +166,63 @@ class ArchitectureStore:
             removed_edges = [e for e in self.edges if node_id in (e["from"], e["to"])]
             self.edges = [e for e in self.edges if node_id not in (e["from"], e["to"])]
             self.nodes = [n for n in self.nodes if n["id"] != node_id]
+            self.layout.pop(node_id, None)
             return {"removed": True, "edges_removed": removed_edges}
+
+    def _connect_one(self, from_id, to_id):
+        """Validate and append one edge (caller holds the lock). Returns the edge
+        dict. Used by both ``connect_layers`` and ``connect_layers_batch``."""
+        if self._node(from_id) is None:
+            raise ValueError(f"unknown source node '{from_id}'")
+        to_node = self._node(to_id)
+        if to_node is None:
+            raise ValueError(f"unknown target node '{to_id}'")
+        if from_id == to_id:
+            raise ValueError(f"self-loop rejected: '{from_id}' cannot connect to itself")
+        if to_node["type"] == "input":
+            raise ValueError(f"'{to_id}' is the input node and cannot have an incoming edge")
+        if any(e["from"] == from_id and e["to"] == to_id for e in self.edges):
+            raise ValueError(f"edge '{from_id}' -> '{to_id}' already exists")
+        if (to_node["type"] not in layers.MERGE_TYPES
+                and any(e["to"] == to_id for e in self.edges)):
+            raise ValueError(
+                f"node '{to_id}' (type '{to_node['type']}') already has an incoming edge; "
+                "non-merge nodes take exactly one input — disconnect it first, or use an "
+                "'add'/'concat' merge node to combine multiple inputs")
+        if self._would_create_cycle(from_id, to_id):
+            raise ValueError(f"edge '{from_id}' -> '{to_id}' would create a cycle")
+        edge = {"from": from_id, "to": to_id}
+        self.edges.append(edge)
+        return dict(edge)
 
     async def connect_layers(self, from_id, to_id):
         """Add a directed edge. Rejects: missing id, self-loop, ``to_id`` is the
         input node, duplicate edge, or an edge that would create a cycle.
         """
         async with self._lock:
-            if self._node(from_id) is None:
-                raise ValueError(f"unknown source node '{from_id}'")
-            to_node = self._node(to_id)
-            if to_node is None:
-                raise ValueError(f"unknown target node '{to_id}'")
-            if from_id == to_id:
-                raise ValueError(f"self-loop rejected: '{from_id}' cannot connect to itself")
-            if to_node["type"] == "input":
-                raise ValueError(f"'{to_id}' is the input node and cannot have an incoming edge")
-            if any(e["from"] == from_id and e["to"] == to_id for e in self.edges):
-                raise ValueError(f"edge '{from_id}' -> '{to_id}' already exists")
-            if (to_node["type"] not in layers.MERGE_TYPES
-                    and any(e["to"] == to_id for e in self.edges)):
+            return {"edge": self._connect_one(from_id, to_id)}
+
+    async def connect_layers_batch(self, edges):
+        """Add many edges in one **atomic** call. ``edges`` is a list of
+        ``{from_id, to_id}``. Each is validated against the graph *including*
+        earlier edges in the same batch; on the first rejection the whole batch
+        is rolled back. Returns ``{edges}`` in order.
+        """
+        if not isinstance(edges, list) or not edges:
+            raise ValueError("connect_layers_batch expects a non-empty list of {from_id, to_id}")
+        async with self._lock:
+            saved = list(self.edges)
+            made = []
+            try:
+                for i, e in enumerate(edges):
+                    if not isinstance(e, dict) or "from_id" not in e or "to_id" not in e:
+                        raise ValueError(f"edge must be an object with 'from_id'/'to_id', got {e!r}")
+                    made.append(self._connect_one(e["from_id"], e["to_id"]))
+            except ValueError as err:
+                self.edges = saved                   # roll back every edge in this batch
                 raise ValueError(
-                    f"node '{to_id}' (type '{to_node['type']}') already has an incoming edge; "
-                    "non-merge nodes take exactly one input — disconnect it first, or use an "
-                    "'add'/'concat' merge node to combine multiple inputs")
-            if self._would_create_cycle(from_id, to_id):
-                raise ValueError(f"edge '{from_id}' -> '{to_id}' would create a cycle")
-            edge = {"from": from_id, "to": to_id}
-            self.edges.append(edge)
-            return {"edge": dict(edge)}
+                    f"connect_layers_batch failed at index {len(made)}: {err}") from err
+            return {"edges": made}
 
     async def disconnect_layers(self, from_id, to_id):
         """Remove an existing edge. Errors if the edge does not exist."""
@@ -143,12 +234,23 @@ class ArchitectureStore:
             self.edges.remove(match)
             return {"removed": True}
 
+    async def get_catalog(self):
+        """Return the layer catalog (types, categories, required + optional params
+        with defaults). Read-only and static, so it needs no lock. This is the
+        agent's discovery surface — no probing required."""
+        return layers.describe_catalog()
+
     async def get_architecture(self):
-        """Full current state, edges in stored (insertion) order. Deep-copied so
-        callers can't mutate the shared state by reference.
+        """Full current state — ``{nodes, edges, layout}``, edges in stored
+        (insertion) order. Deep-copied so callers can't mutate shared state by
+        reference. ``layout`` carries the optional placement hints (id -> {col,
+        row}); it is *not* part of the node schema and never reaches the validator
+        or codegen, which read only nodes/edges via ``_snapshot``.
         """
         async with self._lock:
-            return self._snapshot()
+            snap = self._snapshot()
+            snap["layout"] = copy.deepcopy(self.layout)
+            return snap
 
     async def validate_architecture(self):
         """Validate the current graph by real execution (delegates to
@@ -172,5 +274,6 @@ class ArchitectureStore:
         async with self._lock:
             self.nodes = []
             self.edges = []
+            self.layout = {}
             self._id_counter = 0
             return {"reset": True}

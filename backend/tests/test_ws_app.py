@@ -44,7 +44,7 @@ def _add(ws, layer_type, params=None):
 def test_initial_state_on_connect_is_empty():
     with _client() as c, c.websocket_connect("/ws") as ws:
         state = _recv(ws)
-        assert state == {"type": "state", "data": {"nodes": [], "edges": []}}
+        assert state == {"type": "state", "data": {"nodes": [], "edges": [], "layout": {}}}
 
 
 # -- the six mutations: happy path -> ack then broadcast -------------------
@@ -113,7 +113,7 @@ def test_reset_architecture_acks_then_broadcasts_empty():
         _add(ws, "input", {"shape": [1, 8, 8], "dtype": "float32"})
         ws.send_json({"type": "reset_architecture"})
         assert _recv(ws) == {"type": "ack", "ok": True}
-        assert _recv(ws)["data"] == {"nodes": [], "edges": []}
+        assert _recv(ws)["data"] == {"nodes": [], "edges": [], "layout": {}}
 
 
 # -- generate_code: read-only reply, NO broadcast --------------------------
