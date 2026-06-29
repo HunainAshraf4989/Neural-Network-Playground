@@ -17,9 +17,12 @@ body { background: var(--bg); color: var(--text); }
 
 .app {
   display: grid;
-  grid-template-columns: 210px 1fr 290px;
+  grid-template-columns: 210px 1fr;
   height: 100vh;
 }
+/* The params column only exists while a node is selected, so the empty 290px
+   strip never lingers on the right. */
+.app--panel { grid-template-columns: 210px 1fr 290px; }
 
 /* --- palette --- */
 .palette {
@@ -100,18 +103,18 @@ body { background: var(--bg); color: var(--text); }
   border-radius: 50%;
   border: 3px solid var(--node-color, #8c8c8c);
   background:
-    radial-gradient(circle at 50% 36%, color-mix(in srgb, var(--node-color, #8c8c8c) 30%, #1b2334) 0%, #161d2e 70%);
+    radial-gradient(circle at 50% 42%, color-mix(in srgb, var(--node-color, #8c8c8c) 15%, #171e2d) 0%, #151b29 85%);
   display: flex;
   align-items: center;
   justify-content: center;
   text-align: center;
   padding: 7px;
-  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
   transition: transform 0.12s ease, box-shadow 0.12s ease;
 }
-.nn-node__circle:hover { transform: scale(1.06); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.6); }
+.nn-node__circle:hover { transform: scale(1.04); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4); }
 .nn-node__circle.is-selected {
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--node-color, #8c8c8c) 50%, transparent), 0 3px 10px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--node-color, #8c8c8c) 45%, transparent), 0 2px 6px rgba(0, 0, 0, 0.3);
 }
 .nn-node__label {
   font-size: 10px;
