@@ -69,6 +69,8 @@ class ArchitectureStore:
         defaults). Rejects a second ``input`` node.
         """
         async with self._lock:
+            if not isinstance(params, dict):
+                raise ValueError(f"params must be an object, got {type(params).__name__}")
             if layer_type == "input" and any(n["type"] == "input" for n in self.nodes):
                 raise ValueError(
                     "an input node already exists; remove_layer the existing one "
@@ -86,6 +88,8 @@ class ArchitectureStore:
             node = self._node(node_id)
             if node is None:
                 raise ValueError(f"unknown node '{node_id}'")
+            if not isinstance(params, dict):
+                raise ValueError(f"params must be an object, got {type(params).__name__}")
             merged = layers.validate_and_merge(node["type"], {**node["params"], **params})
             node["params"] = merged
             return {"node_id": node_id, "params": copy.deepcopy(merged)}
