@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { toFlowElements } from "./flow.js";
+import { toFlowElements, dropRemoveChanges } from "./flow.js";
 
 describe("toFlowElements", () => {
   it("maps an empty architecture to empty arrays", () => {
@@ -39,5 +39,33 @@ describe("toFlowElements", () => {
     const arch = { nodes: [{ id: "n1", type: "mystery", params: {} }], edges: [] };
     const { nodes } = toFlowElements(arch);
     expect(nodes[0].data.category).toBeUndefined();
+  });
+});
+
+describe("dropRemoveChanges", () => {
+  it("strips `remove` changes (backend owns existence)", () => {
+    const changes = [
+      { type: "position", id: "n1" },
+      { type: "remove", id: "n2" },
+      { type: "select", id: "n3", selected: true },
+    ];
+    expect(dropRemoveChanges(changes)).toEqual([
+      { type: "position", id: "n1" },
+      { type: "select", id: "n3", selected: true },
+    ]);
+  });
+
+  it("lets geometry/selection changes through untouched", () => {
+    const changes = [
+      { type: "dimensions", id: "n1" },
+      { type: "position", id: "n1" },
+      { type: "select", id: "n1" },
+    ];
+    expect(dropRemoveChanges(changes)).toEqual(changes);
+  });
+
+  it("handles an all-remove batch and an empty batch", () => {
+    expect(dropRemoveChanges([{ type: "remove", id: "e1" }, { type: "remove", id: "e2" }])).toEqual([]);
+    expect(dropRemoveChanges([])).toEqual([]);
   });
 });

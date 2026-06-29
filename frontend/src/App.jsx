@@ -3,11 +3,19 @@
 // of truth — every mutation is sent, never applied locally; the canvas only ever
 // shows what the server broadcasts back (so it can't drift from the agent's view).
 //
+// Ownership split (the rule that keeps the canvas from desyncing): the backend
+// owns *existence* — which nodes and edges there are — and React Flow owns only
+// *geometry* (where they sit) and transient UI (hover/selection). React Flow's
+// change stream is therefore guarded so it can never remove a node/edge locally
+// (see onNodesChange/onEdgesChange + dropRemoveChanges); a deletion only ever
+// lands via a backend broadcast.
+//
 // Layout note (CLAUDE.md invariant 8): node x/y are NOT in the shared schema —
-// they're recomputed each broadcast by the deterministic auto-layout. But users
-// can drag nodes, so we keep a *frontend-only* override map of positions the user
-// set (drag or drop-at-cursor) and apply it on top of the auto-layout. New nodes
-// still auto-layout; nothing about positions ever reaches the backend.
+// they're recomputed each broadcast by the deterministic auto-layout. Overrides
+// layer on top, highest first: a user drag position, then an agent {col,row}
+// hint, then (for a node that just lost its path from input) its current spot, so
+// deleting one wire doesn't reshuffle the downstream graph. Nothing about
+// positions ever reaches the backend.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -28,8 +36,17 @@ import ParamsPanel from "./ParamsPanel.jsx";
 import DeletableEdge from "./DeletableEdge.jsx";
 import CodeModal from "./CodeModal.jsx";
 import { useArchitectureSocket } from "./useArchitectureSocket.js";
-import { toFlowElements } from "./flow.js";
-import { COL_GAP, ROW_GAP, computeLayout, colOf, rowOf, cellPos, snapToCell } from "./layout.js";
+import { toFlowElements, dropRemoveChanges } from "./flow.js";
+import {
+  COL_GAP,
+  ROW_GAP,
+  computeLayout,
+  reachableFromInput,
+  colOf,
+  rowOf,
+  cellPos,
+  snapToCell,
+} from "./layout.js";
 import { defaultParams } from "./catalog.js";
 import * as proto from "./protocol.js";
 
@@ -41,8 +58,8 @@ const GRID = [COL_GAP, ROW_GAP];
 
 export default function App() {
   const { arch, connected, notice, send, requestCode } = useArchitectureSocket();
-  const [nodes, setNodes, onNodesChange] = useNodesState([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const [nodes, setNodes, rawOnNodesChange] = useNodesState([]);
+  const [edges, setEdges, rawOnEdgesChange] = useEdgesState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [codeModal, setCodeModal] = useState(null); // {code} | {error} | null
   const rfRef = useRef(null);
@@ -52,11 +69,17 @@ export default function App() {
   // The backend is authoritative for *which* nodes/edges exist; the frontend
   // owns pixel layout. Positions are recomputed every broadcast from the graph
   // itself (`computeLayout`: column = distance from input, so wiring n1->n2 puts
-  // n2 one column right of n1), then two overrides are layered on top:
+  // n2 one column right of n1), then overrides are layered on top, highest first:
   //   1. a node the user dragged keeps its dragged position;
-  //   2. else an agent placement hint ({col,row} on the backend `layout`) wins.
-  // Because every node is positioned deterministically from the live graph each
-  // time, nodes/edges can never desync or vanish from the canvas.
+  //   2. else an agent placement hint ({col,row} on the backend `layout`) wins;
+  //   3. else, if the node has *lost* its path from input (e.g. the user deleted
+  //      an upstream edge), it stays where it already is rather than collapsing
+  //      back to the input column — so deleting one wire doesn't reshuffle the
+  //      whole downstream graph. Once it's re-wired, the edge-driven layout takes
+  //      over again.
+  // Existence is never applied locally: nodes/edges only appear/disappear from a
+  // broadcast (see the guarded change handlers below), so the canvas can't drift
+  // from the agent's view.
   useEffect(() => {
     const ids = new Set((arch?.nodes ?? []).map((n) => n.id));
     const { nodes: n, edges: e } = toFlowElements(arch);
@@ -68,17 +91,34 @@ export default function App() {
 
     const base = computeLayout(arch); // edge-driven columns for every node
     const hints = arch?.layout ?? {}; // agent placement hints (id -> {col,row})
-    const positionFor = (id) => {
-      if (dragOverridesRef.current.has(id)) return dragOverridesRef.current.get(id);
-      const hint = hints[id];
-      const b = base[id] ?? { x: 0, y: 0 };
-      if (hint && (hint.col != null || hint.row != null)) {
-        return cellPos(hint.col != null ? hint.col : colOf(b), hint.row != null ? hint.row : rowOf(b));
-      }
-      return b;
-    };
+    const reachable = reachableFromInput(arch); // ids with a path from input
+    const hasInput = (arch?.nodes ?? []).some((node) => node.type === "input");
 
-    setNodes(n.map((node) => ({ ...node, position: positionFor(node.id) })));
+    // Functional updater so we can read the *current* on-screen nodes without
+    // adding `nodes` to the deps (which would re-run mid-drag and snap nodes
+    // back). Reusing each existing node object also preserves React Flow's
+    // internal measurements, so edges never blink out during a re-measure.
+    setNodes((prevNodes) => {
+      const prevById = new Map(prevNodes.map((p) => [p.id, p]));
+      const positionFor = (id) => {
+        if (dragOverridesRef.current.has(id)) return dragOverridesRef.current.get(id);
+        const hint = hints[id];
+        const b = base[id] ?? { x: 0, y: 0 };
+        if (hint && (hint.col != null || hint.row != null)) {
+          return cellPos(hint.col != null ? hint.col : colOf(b), hint.row != null ? hint.row : rowOf(b));
+        }
+        // Node that dropped out of the reachable set keeps its current spot.
+        if (hasInput && !reachable.has(id) && prevById.has(id)) {
+          return prevById.get(id).position;
+        }
+        return b;
+      };
+      return n.map((node) => {
+        const prev = prevById.get(node.id);
+        const position = positionFor(node.id);
+        return prev ? { ...prev, type: node.type, data: node.data, position } : { ...node, position };
+      });
+    });
     setEdges(
       e.map((edge) => ({
         ...edge,
@@ -122,6 +162,20 @@ export default function App() {
   const onEdgesDelete = useCallback(
     (deleted) => deleted.forEach((e) => send(proto.disconnectLayers(e.source, e.target))),
     [send],
+  );
+
+  // React Flow may freely move/measure/select on the canvas, but it must never
+  // *delete* a node/edge from our controlled state on its own — existence lives
+  // in the backend. We drop `remove` changes (a known source of the canvas
+  // dropping edges it can't momentarily resolve); a real user delete still fires
+  // onNodesDelete/onEdgesDelete -> backend -> broadcast. See dropRemoveChanges.
+  const onNodesChange = useCallback(
+    (changes) => rawOnNodesChange(dropRemoveChanges(changes)),
+    [rawOnNodesChange],
+  );
+  const onEdgesChange = useCallback(
+    (changes) => rawOnEdgesChange(dropRemoveChanges(changes)),
+    [rawOnEdgesChange],
   );
 
   // Remember where the user dragged a node (snapped to the grid) so it overrides
