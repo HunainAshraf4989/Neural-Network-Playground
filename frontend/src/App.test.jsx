@@ -42,10 +42,9 @@ function mockHook(overrides = {}) {
     arch: { nodes: [], edges: [] },
     connected: true,
     notice: null,
-    send,
     clearNotice: () => {},
     ...overrides,
-    send,
+    send, // forced last so a `send` in overrides can't shadow the captured mock
   });
   return send;
 }
