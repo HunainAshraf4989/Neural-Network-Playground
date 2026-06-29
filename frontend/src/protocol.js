@@ -26,3 +26,9 @@ export function disconnectLayers(from_id, to_id) {
 export function resetArchitecture() {
   return { type: "reset_architecture" };
 }
+
+// Read-only request: asks the backend to emit standalone PyTorch source for the
+// current graph. The reply is a `{type:"code"}` message, not a state broadcast.
+export function generateCode() {
+  return { type: "generate_code" };
+}

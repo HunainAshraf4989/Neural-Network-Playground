@@ -2,6 +2,12 @@
 // turns user actions into §12 client messages. The backend is the single source
 // of truth — every mutation is sent, never applied locally; the canvas only ever
 // shows what the server broadcasts back (so it can't drift from the agent's view).
+//
+// Layout note (CLAUDE.md invariant 8): node x/y are NOT in the shared schema —
+// they're recomputed each broadcast by the deterministic auto-layout. But users
+// can drag nodes, so we keep a *frontend-only* override map of positions the user
+// set (drag or drop-at-cursor) and apply it on top of the auto-layout. New nodes
+// still auto-layout; nothing about positions ever reaches the backend.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -10,13 +16,17 @@ import {
   Controls,
   useNodesState,
   useEdgesState,
+  getNodesBounds,
+  getViewportForBounds,
 } from "@xyflow/react";
+import { toPng } from "html-to-image";
 import "@xyflow/react/dist/style.css";
 
 import LayerNode from "./LayerNode.jsx";
 import LayerPalette from "./LayerPalette.jsx";
 import ParamsPanel from "./ParamsPanel.jsx";
 import DeletableEdge from "./DeletableEdge.jsx";
+import CodeModal from "./CodeModal.jsx";
 import { useArchitectureSocket } from "./useArchitectureSocket.js";
 import { toFlowElements } from "./flow.js";
 import { defaultParams } from "./catalog.js";
@@ -24,22 +34,46 @@ import * as proto from "./protocol.js";
 
 const NODE_TYPES = { layer: LayerNode };
 const EDGE_TYPES = { deletable: DeletableEdge };
+const IMAGE_BG = "#0f1420"; // matches the dark canvas background
 
 export default function App() {
-  const { arch, connected, notice, send } = useArchitectureSocket();
+  const { arch, connected, notice, send, requestCode } = useArchitectureSocket();
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [selectedId, setSelectedId] = useState(null);
-  const wrapperRef = useRef(null);
+  const [codeModal, setCodeModal] = useState(null); // {code} | {error} | null
   const rfRef = useRef(null);
   const prevNodeCount = useRef(0);
+  const positionsRef = useRef(new Map()); // id -> {x,y} the user dragged/dropped
+  const knownIdsRef = useRef(new Set()); // ids seen in the previous broadcast
+  const pendingDropRef = useRef(null); // graph-coords for the next dropped node
+  const suppressFitRef = useRef(false); // skip auto-fit for a drop placement
 
-  // Server state is authoritative: recompute the whole canvas from each `state`
-  // broadcast (auto-layout, no persisted x/y per spec §13). Each edge carries an
-  // `onDelete` so its inline "×" button can remove the connection.
+  // Server state is authoritative: rebuild the whole canvas from each `state`
+  // broadcast (auto-layout), then overlay any user-set positions so drags/drops
+  // survive subsequent broadcasts. Each edge carries an `onDelete` callback.
   useEffect(() => {
+    const ids = new Set((arch?.nodes ?? []).map((n) => n.id));
+
+    // A drop adds exactly one node; pin that new id to the cursor position.
+    if (pendingDropRef.current) {
+      const added = [...ids].filter((id) => !knownIdsRef.current.has(id));
+      if (added.length === 1) positionsRef.current.set(added[0], pendingDropRef.current);
+      pendingDropRef.current = null;
+    }
+    // Forget positions for nodes that no longer exist.
+    for (const id of [...positionsRef.current.keys()]) {
+      if (!ids.has(id)) positionsRef.current.delete(id);
+    }
+
     const { nodes: n, edges: e } = toFlowElements(arch);
-    setNodes(n);
+    setNodes(
+      n.map((node) =>
+        positionsRef.current.has(node.id)
+          ? { ...node, position: positionsRef.current.get(node.id) }
+          : node,
+      ),
+    );
     setEdges(
       e.map((edge) => ({
         ...edge,
@@ -47,16 +81,20 @@ export default function App() {
         data: { onDelete: () => send(proto.disconnectLayers(edge.source, edge.target)) },
       })),
     );
+    knownIdsRef.current = ids;
   }, [arch, setNodes, setEdges, send]);
 
-  // Positions aren't persisted (layout is recomputed every update), so a freshly
-  // added node can land off-screen. Re-frame the canvas whenever the node count
-  // changes so new nodes are always visible — but leave the user's pan/zoom alone
-  // on param edits (count unchanged).
+  // Re-frame the canvas whenever the node count changes so new nodes are visible
+  // — but leave pan/zoom alone on param edits (count unchanged), and don't fight
+  // a deliberate drop placement (the dropped node is already where the user put it).
   useEffect(() => {
     const count = arch?.nodes?.length ?? 0;
-    if (rfRef.current && count !== prevNodeCount.current) {
-      requestAnimationFrame(() => rfRef.current?.fitView({ padding: 0.2, duration: 300 }));
+    if (count !== prevNodeCount.current) {
+      if (suppressFitRef.current) {
+        suppressFitRef.current = false;
+      } else if (rfRef.current) {
+        requestAnimationFrame(() => rfRef.current?.fitView({ padding: 0.2, duration: 300 }));
+      }
     }
     prevNodeCount.current = count;
   }, [arch]);
@@ -81,11 +119,25 @@ export default function App() {
     [send],
   );
 
+  // Remember where the user dropped a node so it stays put across broadcasts.
+  const onNodeDragStop = useCallback((_, node) => {
+    positionsRef.current.set(node.id, node.position);
+  }, []);
+
   const onDrop = useCallback(
     (event) => {
       event.preventDefault();
       const type = event.dataTransfer.getData("application/nn-layer-type");
-      if (type) add(type);
+      if (!type) return;
+      if (rfRef.current) {
+        // Place the new node exactly where it was dropped (graph coords).
+        pendingDropRef.current = rfRef.current.screenToFlowPosition({
+          x: event.clientX,
+          y: event.clientY,
+        });
+        suppressFitRef.current = true;
+      }
+      add(type);
     },
     [add],
   );
@@ -94,16 +146,54 @@ export default function App() {
     event.dataTransfer.dropEffect = "copy";
   }, []);
 
+  const onExportCode = useCallback(async () => {
+    setCodeModal(await requestCode());
+  }, [requestCode]);
+
+  // Export the canvas to PNG: frame the nodes' bounding box and rasterize the
+  // React Flow viewport (the standard @xyflow recipe).
+  const onDownloadImage = useCallback(() => {
+    if (nodes.length === 0) return;
+    const bounds = getNodesBounds(nodes);
+    const pad = 80;
+    const width = Math.max(bounds.width + pad * 2, 400);
+    const height = Math.max(bounds.height + pad * 2, 300);
+    const viewport = getViewportForBounds(bounds, width, height, 0.5, 2, 0.1);
+    const el = document.querySelector(".react-flow__viewport");
+    if (!el) return;
+    toPng(el, {
+      backgroundColor: IMAGE_BG,
+      width,
+      height,
+      style: {
+        width: `${width}px`,
+        height: `${height}px`,
+        transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`,
+      },
+    }).then((dataUrl) => {
+      const a = document.createElement("a");
+      a.setAttribute("download", "neural-network.png");
+      a.setAttribute("href", dataUrl);
+      a.click();
+    });
+  }, [nodes]);
+
   return (
     <div className="app">
       <LayerPalette onAdd={add} />
 
-      <div className="canvas" ref={wrapperRef} onDrop={onDrop} onDragOver={onDragOver}>
+      <div className="canvas" onDrop={onDrop} onDragOver={onDragOver}>
         <div className="toolbar">
           <span className={`status status--${connected ? "ok" : "down"}`}>
             {connected ? "connected" : "disconnected"}
           </span>
-          <button type="button" className="toolbar__reset" onClick={() => send(proto.resetArchitecture())}>
+          <button type="button" className="toolbar__btn" onClick={onExportCode} disabled={!connected}>
+            Export code
+          </button>
+          <button type="button" className="toolbar__btn" onClick={onDownloadImage} disabled={nodes.length === 0}>
+            Download PNG
+          </button>
+          <button type="button" className="toolbar__btn" onClick={() => send(proto.resetArchitecture())}>
             Reset
           </button>
           {notice && <span className={`notice notice--${notice.kind}`}>{notice.message}</span>}
@@ -120,9 +210,9 @@ export default function App() {
           onConnect={onConnect}
           onNodesDelete={onNodesDelete}
           onEdgesDelete={onEdgesDelete}
+          onNodeDragStop={onNodeDragStop}
           onNodeClick={(_, node) => setSelectedId(node.id)}
           onPaneClick={() => setSelectedId(null)}
-          nodesDraggable={false}
           fitView
         >
           <Background />
@@ -139,6 +229,8 @@ export default function App() {
         }}
         onClose={() => setSelectedId(null)}
       />
+
+      {codeModal && <CodeModal result={codeModal} onClose={() => setCodeModal(null)} />}
     </div>
   );
 }

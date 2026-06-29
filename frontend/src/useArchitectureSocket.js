@@ -6,6 +6,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import * as proto from "./protocol.js";
+
 const DEFAULT_URL = "ws://localhost:8765/ws";
 const RECONNECT_MS = 1500;
 
@@ -15,6 +17,7 @@ export function useArchitectureSocket(url = DEFAULT_URL) {
   const [notice, setNotice] = useState(null); // {kind:"error"|"ack", message}
   const wsRef = useRef(null);
   const closedRef = useRef(false);
+  const pendingCodeRef = useRef(null); // resolver for an in-flight requestCode()
 
   useEffect(() => {
     closedRef.current = false;
@@ -38,6 +41,10 @@ export function useArchitectureSocket(url = DEFAULT_URL) {
         }
         if (msg.type === "state") {
           setArch(msg.data);
+        } else if (msg.type === "code") {
+          // Reply to requestCode(): resolve the in-flight promise (if any).
+          pendingCodeRef.current?.(msg);
+          pendingCodeRef.current = null;
         } else if (msg.type === "error") {
           setNotice({ kind: "error", message: msg.message });
         } else if (msg.type === "ack") {
@@ -63,5 +70,19 @@ export function useArchitectureSocket(url = DEFAULT_URL) {
     }
   }, []);
 
-  return { arch, connected, notice, send, clearNotice: () => setNotice(null) };
+  // Ask the backend for the generated PyTorch source; resolves with the `code`
+  // reply ({code} or {error}). Only one request is tracked at a time, which is
+  // all the single "Export code" button needs.
+  const requestCode = useCallback(() => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      return Promise.resolve({ error: "not connected to backend" });
+    }
+    return new Promise((resolve) => {
+      pendingCodeRef.current = resolve;
+      ws.send(JSON.stringify(proto.generateCode()));
+    });
+  }, []);
+
+  return { arch, connected, notice, send, requestCode, clearNotice: () => setNotice(null) };
 }

@@ -130,6 +130,17 @@ def build_app(store):
                     await ws.send_json({"type": "error", "message": "message must be a json object"})
                     continue
                 log.info("recv %s", msg)
+                # `generate_code` is a read, not a mutation: it returns source to
+                # the originating client only (no ack, no state broadcast). It
+                # still flows through the single store method (invariant 2).
+                if msg.get("type") == "generate_code":
+                    try:
+                        result = await store.generate_code()
+                    except ValueError as err:
+                        await ws.send_json({"type": "code", "error": str(err)})
+                    else:
+                        await ws.send_json({"type": "code", "code": result["code"]})
+                    continue
                 try:
                     await _apply(store, msg)
                 except ValueError as err:
