@@ -43,6 +43,7 @@ def build_mcp(store, broadcast=None) -> FastMCP:
         """Add a layer node. Validates ``type`` against the catalog and ``params``
         against that type's required/optional fields, applying defaults for any
         omitted. Rejects a second ``input`` node. Returns ``{node_id}``."""
+        log.info("mcp add_layer type=%s params=%s", type, params)
         result = await store.add_layer(type, params)
         await fire()
         return result
@@ -51,6 +52,7 @@ def build_mcp(store, broadcast=None) -> FastMCP:
     async def update_layer(node_id: str, params: dict[str, Any]) -> dict[str, Any]:
         """Partially update a node's params: merges ``params`` into the existing
         ones and re-validates the merged result. Returns ``{node_id, params}``."""
+        log.info("mcp update_layer node_id=%s params=%s", node_id, params)
         result = await store.update_layer(node_id, params)
         await fire()
         return result
@@ -59,6 +61,7 @@ def build_mcp(store, broadcast=None) -> FastMCP:
     async def remove_layer(node_id: str) -> dict[str, Any]:
         """Remove a node and cascade-delete every edge touching it.
         Returns ``{removed: true, edges_removed: [...]}``."""
+        log.info("mcp remove_layer node_id=%s", node_id)
         result = await store.remove_layer(node_id)
         await fire()
         return result
@@ -69,6 +72,7 @@ def build_mcp(store, broadcast=None) -> FastMCP:
         self-loop, ``to_id`` is the input node, duplicate edge, a second incoming
         edge into a non-merge node, or an edge that would create a cycle.
         Returns ``{edge: {from, to}}``."""
+        log.info("mcp connect_layers %s -> %s", from_id, to_id)
         result = await store.connect_layers(from_id, to_id)
         await fire()
         return result
@@ -77,6 +81,7 @@ def build_mcp(store, broadcast=None) -> FastMCP:
     async def disconnect_layers(from_id: str, to_id: str) -> dict[str, Any]:
         """Remove the edge ``from_id -> to_id``. Errors if it does not exist.
         Returns ``{removed: true}``."""
+        log.info("mcp disconnect_layers %s -> %s", from_id, to_id)
         result = await store.disconnect_layers(from_id, to_id)
         await fire()
         return result
@@ -85,6 +90,7 @@ def build_mcp(store, broadcast=None) -> FastMCP:
     async def reset_architecture() -> dict[str, Any]:
         """Clear all nodes and edges and reset the id counter so the next id is
         ``n1``. Returns ``{reset: true}``."""
+        log.info("mcp reset_architecture")
         result = await store.reset_architecture()
         await fire()
         return result
@@ -95,6 +101,7 @@ def build_mcp(store, broadcast=None) -> FastMCP:
     async def get_architecture() -> dict[str, Any]:
         """Return the full current graph: ``{nodes: [...], edges: [...]}`` with
         edges in stored (insertion) order."""
+        log.info("mcp get_architecture")
         return await store.get_architecture()
 
     @mcp.tool()
@@ -103,12 +110,14 @@ def build_mcp(store, broadcast=None) -> FastMCP:
         dummy batch (N=2). On success: ``{valid: true, output_shapes,
         output_node_ids, warnings}``. On failure: ``{valid: false, error:
         {node_id, layer_type, message}, warnings}``."""
+        log.info("mcp validate_architecture")
         return await store.validate_architecture()
 
     @mcp.tool()
     async def generate_code() -> dict[str, Any]:
         """Emit best-effort, self-contained PyTorch source for the current graph
         (no prior validate required). Returns ``{code: str}``."""
+        log.info("mcp generate_code")
         return await store.generate_code()
 
     return mcp
