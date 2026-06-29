@@ -28,6 +28,8 @@ vi.mock("@xyflow/react", async () => {
     Controls: () => null,
     useNodesState: mk,
     useEdgesState: mk,
+    getNodesBounds: () => ({ x: 0, y: 0, width: 0, height: 0 }),
+    getViewportForBounds: () => ({ x: 0, y: 0, zoom: 1 }),
   };
 });
 

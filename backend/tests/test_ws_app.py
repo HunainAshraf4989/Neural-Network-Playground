@@ -116,6 +116,31 @@ def test_reset_architecture_acks_then_broadcasts_empty():
         assert _recv(ws)["data"] == {"nodes": [], "edges": []}
 
 
+# -- generate_code: read-only reply, NO broadcast --------------------------
+
+def test_generate_code_returns_source_without_broadcast():
+    with _client() as c, c.websocket_connect("/ws") as ws:
+        _recv(ws)
+        _add(ws, "input", {"shape": [1, 8, 8], "dtype": "float32"})
+        ws.send_json({"type": "generate_code"})
+        reply = _recv(ws)
+        assert reply["type"] == "code"
+        assert "import torch" in reply["code"]
+        # no broadcast followed: a subsequent op's first reply is its own ack
+        ws.send_json({"type": "add_layer", "layer_type": "flatten", "params": {}})
+        assert _recv(ws) == {"type": "ack", "ok": True}
+        _recv(ws)  # drain that op's broadcast
+
+
+def test_generate_code_with_no_input_node_returns_error_field():
+    with _client() as c, c.websocket_connect("/ws") as ws:
+        _recv(ws)
+        ws.send_json({"type": "generate_code"})
+        reply = _recv(ws)
+        assert reply["type"] == "code"
+        assert "error" in reply and "code" not in reply
+
+
 # -- rejection branches: error reply, NO broadcast -------------------------
 
 def _assert_error_no_broadcast(ws, msg, needle=None):

@@ -44,4 +44,8 @@ describe("protocol builders", () => {
   it("reset_architecture", () => {
     expect(proto.resetArchitecture()).toEqual({ type: "reset_architecture" });
   });
+
+  it("generate_code", () => {
+    expect(proto.generateCode()).toEqual({ type: "generate_code" });
+  });
 });

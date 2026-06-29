@@ -1,7 +1,7 @@
 // Sidebar of every catalog type, grouped by category (spec §13). Dragging a type
-// onto the canvas triggers add_layer with that type's schema defaults; the drop
-// coordinates are discarded (auto-layout owns positioning). Clicking a type adds
-// it too, as a no-drag fallback.
+// onto the canvas triggers add_layer with that type's schema defaults; App pins
+// the new node at the drop point (see App.jsx). Clicking a type adds it too, as a
+// no-drag fallback (auto-layout positions it).
 
 import { groupedByCategory } from "./catalog.js";
 
