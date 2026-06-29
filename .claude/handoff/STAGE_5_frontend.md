@@ -34,4 +34,36 @@ Empty canvas boots; each interaction works against the standalone backend; layou
   reflects the human edit — proves cross-surface sync over the single store.
 
 ## Status
-⬜ not started.
+✅ done. `frontend/` is a Vite + React (plain JS) app using **`@xyflow/react` v12** (the current
+React Flow package, confirmed on npm at install). Architecture: the backend is the single source of
+truth — the app never mutates `arch` locally, it only renders what `state` broadcasts back and sends
+§12 client messages, so the canvas can't drift from the agent's view.
+
+Modules:
+- `src/catalog.js` — frontend mirror of `backend/layers.py CATALOG`. Carries a concrete starting
+  value for **every** param (required + optional), because the backend rejects `add_layer` with a
+  missing required param and those have no schema default there. A drag therefore always produces a
+  valid `add_layer`; the user then refines params in the panel. Adding a layer is now a **third**
+  edit point (alongside `layers.py` + `codegen.py`).
+- `src/layout.js` — deterministic layered layout: column = BFS **max**-distance from `input`, row =
+  node-id order; disconnected/no-input nodes fall to column 0 so they stay visible. No `dagre`.
+- `src/protocol.js` — pure §12 client-message builders. `src/flow.js` — backend state → React Flow
+  elements. `src/paramTypes.js` — value↔text coercion so `"3"`→`3`, `"[1,2]"`→`[1,2]` round-trip.
+- `src/useArchitectureSocket.js` — ws hook (auto-reconnect) holding `arch` + surfacing ack/error.
+- Components: `App.jsx` (canvas + toolbar + drop/connect/delete/reset wiring), `LayerNode.jsx` (one
+  generic node, color-coded by category, no target handle on `input`), `LayerPalette.jsx` (grouped
+  by category, drag/click → `add_layer`), `ParamsPanel.jsx` (typed form → `update_layer` / delete).
+
+Tests (all green): **62** Vitest unit/component tests (`layout`, `paramTypes`, `protocol`, `flow`,
+`catalog` parity vs the live `backend/layers.py`, `LayerNode`, `LayerPalette`, `ParamsPanel`, `App`
+with React Flow + socket mocked) + **22** live-backend e2e tests (`test/e2e/ws.test.js`, run with
+`npm run test:e2e`) that spawn the real `MODE=standalone` backend and drive **every** mutation, every
+rejection branch, malformed-input robustness, and multi-client broadcast through the frontend's own
+message builders. `npm run build` succeeds; dev server boots and serves the empty canvas.
+
+## Verification gate — met
+- `npm test` → 62 passed; `npm run test:e2e` → 22 passed against the live standalone backend;
+  `npm run build` → ok; `npx vite` serves the app (HTTP 200, empty canvas).
+- Cross-surface single-store sync (human ws edit visible to MCP `get_architecture`) is exercised by
+  `backend/tests/test_ws_stdio.py` (89 backend tests still green), over the same store + the same
+  §12 messages this frontend sends.
