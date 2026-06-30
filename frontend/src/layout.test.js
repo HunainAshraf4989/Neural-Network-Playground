@@ -1,5 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { computeLayout, snapToCell, colOf, rowOf, COL_GAP, ROW_GAP } from "./layout.js";
+import {
+  computeLayout,
+  reachableFromInput,
+  snapToCell,
+  colOf,
+  rowOf,
+  COL_GAP,
+  ROW_GAP,
+} from "./layout.js";
 
 const col = (p) => p.x / COL_GAP;
 const row = (p) => p.y / ROW_GAP;
@@ -126,6 +134,82 @@ describe("computeLayout", () => {
       ],
     };
     expect(computeLayout(arch)).toEqual(computeLayout(arch));
+  });
+});
+
+describe("reachableFromInput", () => {
+  const set = (arch) => reachableFromInput(arch);
+
+  it("is empty when there is no input node", () => {
+    const arch = {
+      nodes: [
+        { id: "n1", type: "relu" },
+        { id: "n2", type: "relu" },
+      ],
+      edges: [{ from: "n1", to: "n2" }],
+    };
+    expect(set(arch)).toEqual(new Set());
+  });
+
+  it("includes the input node itself", () => {
+    expect(set({ nodes: [{ id: "n1", type: "input" }], edges: [] })).toEqual(new Set(["n1"]));
+  });
+
+  it("follows the whole chain from input", () => {
+    const arch = {
+      nodes: [
+        { id: "n1", type: "input" },
+        { id: "n2", type: "conv2d" },
+        { id: "n3", type: "relu" },
+      ],
+      edges: [
+        { from: "n1", to: "n2" },
+        { from: "n2", to: "n3" },
+      ],
+    };
+    expect(set(arch)).toEqual(new Set(["n1", "n2", "n3"]));
+  });
+
+  it("excludes a subgraph cut off from input (the edge-delete case)", () => {
+    // input->n2 still wired; n3->n4 used to hang off n2 but that edge is gone.
+    const arch = {
+      nodes: [
+        { id: "n1", type: "input" },
+        { id: "n2", type: "conv2d" },
+        { id: "n3", type: "relu" },
+        { id: "n4", type: "linear" },
+      ],
+      edges: [
+        { from: "n1", to: "n2" },
+        { from: "n3", to: "n4" },
+      ],
+    };
+    expect(set(arch)).toEqual(new Set(["n1", "n2"]));
+  });
+
+  it("reaches both arms of a branch+merge", () => {
+    const arch = {
+      nodes: [
+        { id: "n1", type: "input" },
+        { id: "n2", type: "conv2d" },
+        { id: "n3", type: "conv2d" },
+        { id: "n4", type: "add" },
+      ],
+      edges: [
+        { from: "n1", to: "n2" },
+        { from: "n1", to: "n3" },
+        { from: "n2", to: "n4" },
+        { from: "n3", to: "n4" },
+      ],
+    };
+    expect(set(arch)).toEqual(new Set(["n1", "n2", "n3", "n4"]));
+  });
+
+  it("ignores edges referencing unknown nodes and handles empty input", () => {
+    expect(set({ nodes: [{ id: "n1", type: "input" }], edges: [{ from: "n1", to: "ghost" }] }))
+      .toEqual(new Set(["n1"]));
+    expect(set({ nodes: [], edges: [] })).toEqual(new Set());
+    expect(set(undefined)).toEqual(new Set());
   });
 });
 

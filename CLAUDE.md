@@ -50,9 +50,19 @@ always use /karpathy-guidelines skill.
    codegen never see geometry. Two things layer on top of that, both kept *out* of node params:
    - The frontend owns pixel layout, recomputed every broadcast by a deterministic **edge-driven**
      layout (`frontend/src/layout.js` `computeLayout`): column = distance from the `input` node, so wiring
-     `n1 -> n2` puts `n2` one column right of `n1` (and the `input` node is leftmost). Two overrides are
-     layered on top, in order: a node the user **dragged** keeps its dragged position; else an agent
-     **layout hint** `{col,row}` wins. Dragging snaps to the column/row grid.
+     `n1 -> n2` puts `n2` one column right of `n1` (and the `input` node is leftmost). Three overrides are
+     layered on top, in order: (1) a node the user **dragged** keeps its dragged position; (2) else an agent
+     **layout hint** `{col,row}` wins; (3) else a node that has **lost its path from input** (e.g. the user
+     deleted an upstream edge — `reachableFromInput` no longer contains it) keeps its *current* spot instead
+     of collapsing back to column 0, so deleting one wire doesn't reshuffle the whole downstream graph; it
+     re-flows once re-wired. Dragging snaps to the column/row grid.
+   - **The backend owns *existence*; React Flow owns only *geometry*.** The canvas is controlled state, but
+     React Flow's `onNodesChange`/`onEdgesChange` streams are guarded (`flow.js` `dropRemoveChanges`) so RF
+     can never *delete* a node/edge locally — `remove` changes are dropped (they were a silent source of
+     "edges vanish while the graph is still valid" desyncs, e.g. an edge whose handle RF can't resolve for a
+     frame). A real delete still flows user → `onNodesDelete`/`onEdgesDelete` → store → broadcast, so the
+     element disappears only when the backend says so. Existing node objects are also reused across
+     broadcasts so RF keeps its measurements and edges don't blink out during a re-measure.
    - The store keeps a **separate** optional `layout` map (`id -> {col,row}`) that an agent may set via
      `add_layer`/`add_layers`. It's broadcast inside `get_architecture` as a top-level `layout` key
      (alongside `nodes`/`edges`) purely as a placement *hint* for the canvas — it never reaches the

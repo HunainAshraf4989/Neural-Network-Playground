@@ -47,8 +47,11 @@ Modules:
   edit point (alongside `layers.py` + `codegen.py`).
 - `src/layout.js` — deterministic layered layout: column = BFS **max**-distance from `input`, row =
   node-id order; disconnected/no-input nodes fall to column 0 so they stay visible. No `dagre`.
+  `reachableFromInput` lets App keep a node that *loses* its path from input parked where it is (so
+  deleting one wire doesn't yank the downstream graph back to column 0).
 - `src/protocol.js` — pure §12 client-message builders. `src/flow.js` — backend state → React Flow
-  elements. `src/paramTypes.js` — value↔text coercion so `"3"`→`3`, `"[1,2]"`→`[1,2]` round-trip.
+  elements, plus `dropRemoveChanges` (the change-stream guard that keeps the backend the sole owner of
+  node/edge existence). `src/paramTypes.js` — value↔text coercion so `"3"`→`3`, `"[1,2]"`→`[1,2]`.
 - `src/useArchitectureSocket.js` — ws hook (auto-reconnect) holding `arch` + surfacing ack/error.
 - Components: `App.jsx` (canvas + toolbar + drop/connect/delete/reset wiring), `LayerNode.jsx` (one
   generic node, color-coded by category, no target handle on `input`), `LayerPalette.jsx` (grouped
@@ -67,3 +70,20 @@ message builders. `npm run build` succeeds; dev server boots and serves the empt
 - Cross-surface single-store sync (human ws edit visible to MCP `get_architecture`) is exercised by
   `backend/tests/test_ws_stdio.py` (89 backend tests still green), over the same store + the same
   §12 messages this frontend sends.
+
+## Canvas-sync hardening (follow-up fix)
+Two human-edit UX bugs traced to one principle that wasn't actually enforced — *the backend owns
+existence, React Flow owns only geometry*:
+- **Deleting a connection collapsed the downstream graph to the input column.** `computeLayout` parks
+  any node with no path from `input` at column 0, so cutting a mid-chain wire dropped everything after
+  it onto the input column. Fix: a node that *was* placed and then loses its path from input keeps its
+  current position (layout override #3, via `reachableFromInput`) and re-flows once re-wired.
+- **Edges vanished from the canvas while the backend graph stayed valid** (e.g. after dropping a node
+  and dragging a connection). Root cause: React Flow's `onNodesChange`/`onEdgesChange` could emit
+  `remove` changes from internal bookkeeping (an edge whose handle it can't resolve for a frame after a
+  wholesale node replace), and we applied them straight to controlled state — silently deleting
+  elements the store still had. Fix: `flow.js` `dropRemoveChanges` strips `remove` from both streams
+  (real deletes still round-trip via `onNodesDelete`/`onEdgesDelete` → store → broadcast), and the
+  broadcast effect now reuses existing node objects so React Flow keeps its measurements (no
+  re-measure blink). Covered by `App.desync.test.jsx`, which proves a spurious RF `remove` no longer
+  drops a node/edge. Suite now **76** Vitest tests.

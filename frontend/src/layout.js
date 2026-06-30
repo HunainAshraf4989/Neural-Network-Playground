@@ -33,6 +33,41 @@ export const cellPos = (col, row) => ({ x: col * COL_GAP, y: row * ROW_GAP });
 export const snapToCell = (p) =>
   cellPos(Math.max(0, Math.round(p.x / COL_GAP)), Math.max(0, Math.round(p.y / ROW_GAP)));
 
+// Set of node ids with a directed path from the input node (the input itself
+// included). Empty when there is no input node. App uses this to keep a node
+// that *loses* its path from input (e.g. the user deleted an upstream edge)
+// parked at its current position instead of collapsing it back to the input
+// column — see the "sticky" rule in App.jsx. Pure; ignores edges to/from
+// unknown nodes (mirrors computeLayout).
+export function reachableFromInput(arch) {
+  const nodes = arch?.nodes ?? [];
+  const edges = arch?.edges ?? [];
+  const input = nodes.find((n) => n.type === "input");
+  if (!input) return new Set();
+
+  const ids = new Set(nodes.map((n) => n.id));
+  const adj = new Map();
+  for (const e of edges) {
+    if (ids.has(e.from) && ids.has(e.to)) {
+      if (!adj.has(e.from)) adj.set(e.from, []);
+      adj.get(e.from).push(e.to);
+    }
+  }
+
+  const seen = new Set([input.id]);
+  const stack = [input.id];
+  while (stack.length) {
+    const id = stack.pop();
+    for (const next of adj.get(id) ?? []) {
+      if (!seen.has(next)) {
+        seen.add(next);
+        stack.push(next);
+      }
+    }
+  }
+  return seen;
+}
+
 export function computeLayout(arch) {
   const nodes = arch?.nodes ?? [];
   const edges = arch?.edges ?? [];
