@@ -281,6 +281,33 @@ export default function App() {
           <Background />
           <Controls />
         </ReactFlow>
+
+        {/* Empty-canvas guidance so a blank screen is never a mystery: when not
+            connected, point the user at starting the backend (the canvas
+            reconnects on its own); when connected, invite the first layer.
+            Hidden the moment any node exists, so it never covers a real graph. */}
+        {nodes.length === 0 && (
+          <div className="canvas__empty">
+            {connected ? (
+              <>
+                <div className="canvas__empty-title">Canvas is live</div>
+                <p>
+                  Drag a layer from the palette, or ask your agent to build a
+                  network — it appears here as it's created.
+                </p>
+              </>
+            ) : (
+              <>
+                <div className="canvas__empty-title">Waiting for the backend…</div>
+                <p>
+                  The canvas reconnects automatically. Make sure a backend is
+                  running — Claude Desktop launches it, or run{" "}
+                  <code>MODE=standalone python backend/main.py</code>.
+                </p>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       <ParamsPanel

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "nn-architect": {
+      "command": "/ABSOLUTE/PATH/TO/venv/bin/python",
+      "args": ["/ABSOLUTE/PATH/TO/nn-architect/backend/main.py"]
+    }
+  }
+}

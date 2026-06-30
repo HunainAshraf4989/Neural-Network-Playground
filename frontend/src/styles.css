@@ -51,6 +51,36 @@ body { background: var(--bg); color: var(--text); }
 
 /* --- canvas --- */
 .canvas { position: relative; height: 100%; }
+
+/* Centered hint shown only on an empty canvas (z below the toolbar's z:5 and
+   pointer-events:none, so it never blocks the palette drop, controls, or
+   buttons). Turns a blank screen into a clear "the backend isn't up yet" or
+   "drop a layer here" message instead of a mystery. */
+.canvas__empty {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+  padding: 24px;
+  pointer-events: none;
+  color: var(--muted);
+}
+.canvas__empty-title { font-size: 16px; font-weight: 700; color: var(--text); }
+.canvas__empty p { margin: 0; max-width: 440px; font-size: 13px; line-height: 1.5; }
+.canvas__empty code {
+  font-family: "SFMono-Regular", "JetBrains Mono", Menlo, monospace;
+  font-size: 12px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 1px 5px;
+  color: var(--text);
+}
 .react-flow__pane { background: var(--bg); }
 .react-flow__controls button {
   background: var(--panel-2);
