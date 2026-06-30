@@ -95,34 +95,126 @@ body { background: var(--bg); color: var(--text); }
 .notice--error { color: var(--danger); }
 .notice--ack { color: #2bd49b; }
 
-/* --- node (circular, NN-diagram style) --- */
-.nn-node { position: relative; display: flex; align-items: center; justify-content: center; }
-.nn-node__circle {
-  width: 80px;
-  height: 80px;
-  border-radius: 50%;
-  border: 3px solid var(--node-color, #8c8c8c);
-  background:
-    radial-gradient(circle at 50% 42%, color-mix(in srgb, var(--node-color, #8c8c8c) 15%, #171e2d) 0%, #151b29 85%);
+/* --- node (NN-diagram glyphs, sized by feature width) --- */
+/* Fixed-footprint container = one layout cell; the glyph is sized by dimension
+   and centered inside it, so a smaller layer floats to the cell's middle and the
+   chain forms a taper (the autoencoder hourglass) without moving any positions. */
+.nn-node {
+  position: relative;
+  width: 116px;
+  height: 116px;
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+/* Base glyph: a color-coded shell with the layer's signature gradient. `--d` (the
+   diameter) is set per node from dims.js; each family derives its footprint from it. */
+.nn-glyph {
+  --shell: color-mix(in srgb, var(--node-color, #8c8c8c) 15%, #171e2d);
+  position: relative;
+  width: var(--d, 76px);
+  height: var(--d, 76px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
   text-align: center;
-  padding: 7px;
+  padding: 6px;
+  border: 3px solid var(--node-color, #8c8c8c);
+  background: radial-gradient(circle at 50% 38%, var(--shell) 0%, #151b29 88%);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
   transition: transform 0.12s ease, box-shadow 0.12s ease;
 }
-.nn-node__circle:hover { transform: scale(1.04); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4); }
-.nn-node__circle.is-selected {
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--node-color, #8c8c8c) 45%, transparent), 0 2px 6px rgba(0, 0, 0, 0.3);
+.nn-glyph:hover { transform: scale(1.05); box-shadow: 0 5px 14px rgba(0, 0, 0, 0.45); }
+.nn-glyph.is-selected {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--node-color, #8c8c8c) 50%, transparent), 0 2px 6px rgba(0, 0, 0, 0.3);
 }
+
+/* circle — the quiet in-place op (activation / norm / pooling / dropout / shape). */
+.nn-glyph--circle { border-radius: 50%; }
+
+/* slab — a conv layer drawn as stacked feature-map planes (the CNN block). */
+.nn-glyph--slab {
+  border-radius: 9px;
+  box-shadow:
+    5px 5px 0 -1px color-mix(in srgb, var(--node-color, #8c8c8c) 45%, #11161f),
+    9px 9px 0 -2px color-mix(in srgb, var(--node-color, #8c8c8c) 28%, #11161f),
+    0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+/* stack — a fully-connected layer drawn as a tall column of neurons. */
+.nn-glyph--stack {
+  width: calc(var(--d, 76px) * 0.72);
+  border-radius: calc(var(--d, 76px) * 0.36);
+}
+.nn-glyph--stack .nn-node__label { white-space: nowrap; font-size: 8px; letter-spacing: -0.01em; }
+.nn-glyph__dots { display: flex; flex-direction: column; gap: 2.5px; align-items: center; }
+.nn-glyph__dots i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--node-color, #8c8c8c) 70%, #fff);
+}
+
+/* block — a transformer / attention sub-layer composite. */
+.nn-glyph--block,
+.nn-glyph--loop {
+  width: calc(var(--d, 76px) * 1.18);
+  height: calc(var(--d, 76px) * 0.84);
+  border-radius: 11px;
+}
+.nn-glyph__sub {
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  font-family: "SFMono-Regular", "JetBrains Mono", Menlo, monospace;
+  color: color-mix(in srgb, var(--node-color, #8c8c8c) 55%, #fff);
+}
+.nn-glyph__loop { position: absolute; top: 4px; right: 7px; font-size: 13px; line-height: 1; color: color-mix(in srgb, var(--node-color, #8c8c8c) 70%, #fff); }
+
+/* merge — a junction where paths add (⊕) or concatenate (∥). */
+.nn-glyph--merge {
+  width: calc(var(--d, 76px) * 0.82);
+  height: calc(var(--d, 76px) * 0.82);
+  border-radius: 50%;
+}
+.nn-glyph__sign { font-size: calc(var(--d, 76px) * 0.34); font-weight: 800; line-height: 1; color: color-mix(in srgb, var(--node-color, #8c8c8c) 78%, #fff); }
+
+/* tag — the input data tensor. */
+.nn-glyph--tag {
+  width: calc(var(--d, 76px) * 1.12);
+  height: calc(var(--d, 76px) * 0.72);
+  border-radius: 8px;
+  border-style: dashed;
+}
+
 .nn-node__label {
-  font-size: 10px;
+  font-size: 9.5px;
   font-weight: 700;
-  line-height: 1.12;
-  color: color-mix(in srgb, var(--node-color, #e6eaf2) 65%, #ffffff);
+  line-height: 1.1;
+  color: color-mix(in srgb, var(--node-color, #e6eaf2) 60%, #ffffff);
   word-break: break-word;
   hyphens: auto;
+}
+
+/* the feature width the layer emits, parked just under the glyph. */
+.nn-node__dim {
+  position: absolute;
+  top: calc(50% + var(--d, 76px) / 2 + 5px);
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 9px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nn-glyph { transition: none; }
+  .nn-glyph:hover { transform: none; }
 }
 
 /* hover tooltip with key params */
@@ -158,7 +250,22 @@ body { background: var(--bg); color: var(--text); }
 .nn-node__tooltip-key { color: #8b95a7; }
 .nn-node__tooltip-val { font-variant-numeric: tabular-nums; }
 
-.nn-handle { width: 9px; height: 9px; background: #1b2334; border: 2px solid #8b95a7; }
+/* Handles are hidden by default so edges flow cleanly INTO the glyph (no
+   ring-to-ring gap), and fade in on node hover for discoverable hand-wiring —
+   the same hover-reveal affordance as the edge-delete button. They stay in the
+   DOM (so React Flow still routes edges to the glyph edge and connecting works);
+   only their visibility changes. */
+.nn-handle {
+  width: 9px;
+  height: 9px;
+  background: #1b2334;
+  border: 2px solid var(--node-color, #8b95a7);
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.nn-node:hover .nn-handle { opacity: 1; }
+.react-flow.connecting .nn-handle,
+.nn-handle.connectionindicator:hover { opacity: 1; }
 
 /* --- edge delete (hover-reveal trash) --- */
 .nn-edge-hit { pointer-events: stroke; cursor: pointer; }

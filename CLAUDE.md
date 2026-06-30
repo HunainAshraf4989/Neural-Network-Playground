@@ -44,7 +44,13 @@ always use /karpathy-guidelines skill.
 6. **Self-attention only:** `multihead_attention` forward is `self.layer(x, x, x)`. No cross-attention.
 7. **Validation runs in a subprocess** (`subprocess.run(..., timeout=10)`) so a bad model can't take
    down the main process. Errors come back as structured `LayerExecutionError`
-   (`node_id`/`layer_type`/`original`), never parsed from generic strings.
+   (`node_id`/`layer_type`/`original`), never parsed from generic strings. **Memory is bounded two
+   ways** so a huge architecture can't OOM the host (the timeout only guards *hangs*, not RAM):
+   (a) `validator.py` does a cheap **pre-flight param estimate** (`_estimate_params`) and rejects a graph
+   over `NN_VALIDATION_MAX_PARAMS` (default 500M) *before* spawning torch, with a clean structured message;
+   (b) the runner caps its own address space via `RLIMIT_AS` (`runner_template._cap_memory`,
+   `NN_VALIDATION_MEM_MB`, default 4096) as a hard net for what the estimate misses (e.g. big conv
+   activation maps). Both are *resource* guards — shape correctness is still decided only by real execution.
 8. **IDs** are an incremental counter (`n1`, `n2`, …), reset to 0 on `reset_architecture`. No UUIDs.
    Node `(x,y)` pixel positions are NEVER in the node schema (`{id,type,params}`), so the validator and
    codegen never see geometry. Two things layer on top of that, both kept *out* of node params:
@@ -67,6 +73,15 @@ always use /karpathy-guidelines skill.
      `add_layer`/`add_layers`. It's broadcast inside `get_architecture` as a top-level `layout` key
      (alongside `nodes`/`edges`) purely as a placement *hint* for the canvas — it never reaches the
      validator or codegen (those read `_snapshot()`, which is nodes+edges only).
+   - **Glyph shape + size are derived, not stored** (like positions, frontend-only — never sent back).
+     `frontend/src/dims.js` `computeWidths` gives each node a "feature width" (out_features / out_channels /
+     … ; pass-through layers like relu/dropout/norm INHERIT from upstream), and `computeDiameters` maps it,
+     per-graph on a sqrt scale, to a glyph diameter — so a network's silhouette reads at a glance (an
+     autoencoder visibly tapers to its latent). `LayerNode.jsx` picks a **glyph per `category`** (conv→slab,
+     linear→neuron-stack, attention→block, merge→junction, input→tag, in-place ops→a small quiet circle) and
+     **insets the connection handles to the glyph's edge** (`NODE_BOX`/`WIDTH_FACTOR`) so the fixed cell stays
+     easy to hand-wire. Edges spanning >1 column are drawn as **dashed skip arcs** (`edgeGeometry.js`). None of
+     this touches the schema, validator, or codegen.
 
 ## Layer catalog scope (this build)
 
@@ -77,7 +92,9 @@ carries a `category` used for frontend color-coding. The implemented set is
 input/conv/pooling/norm/activation/recurrent/attention/merge plus four buckets for layers that fit
 none of those: `linear`, `shape` (flatten), `regularization` (dropout), `embedding`. Category is
 frontend-only metadata, enforced by nothing. Adding a layer = one schema entry in `layers.py` + one
-codegen mapping (`_CONSTRUCTORS`) in `codegen.py`.
+codegen mapping (`_CONSTRUCTORS`) in `codegen.py` (+ `frontend/src/catalog.js` for the palette). If the
+new layer *changes the feature width* (like linear/conv), also add a case to `frontend/src/dims.js`
+`ownWidth` so it sizes correctly; pass-through layers need nothing (they inherit).
 
 ## Agent tool surface (MCP)
 
@@ -107,6 +124,9 @@ MODE=standalone /home/hunain/base/bin/python backend/main.py
 # Frontend
 cd frontend && npm install && npm run dev   # connects to ws://localhost:8765/ws
 ```
+
+Validation memory guards (invariant 7) are tunable via env: `NN_VALIDATION_MAX_PARAMS` (default 500M —
+the pre-flight reject threshold) and `NN_VALIDATION_MEM_MB` (default 4096 — the subprocess RLIMIT_AS cap).
 
 **Busy `:8765` (a stale/duplicate backend already running):** full mode does NOT
 fight for the port. It keeps serving MCP (the agent's only contract) but runs

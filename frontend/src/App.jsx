@@ -48,6 +48,7 @@ import {
   snapToCell,
 } from "./layout.js";
 import { defaultParams } from "./catalog.js";
+import { computeWidths, computeDiameters } from "./dims.js";
 import * as proto from "./protocol.js";
 
 const NODE_TYPES = { layer: LayerNode };
@@ -93,6 +94,10 @@ export default function App() {
     const hints = arch?.layout ?? {}; // agent placement hints (id -> {col,row})
     const reachable = reachableFromInput(arch); // ids with a path from input
     const hasInput = (arch?.nodes ?? []).some((node) => node.type === "input");
+    // Glyph size + label per node from its feature width (dims.js). Frontend-only,
+    // exactly like positions — it never reaches the backend (invariant 8).
+    const diameters = computeDiameters(arch);
+    const widths = computeWidths(arch);
 
     // Functional updater so we can read the *current* on-screen nodes without
     // adding `nodes` to the deps (which would re-run mid-drag and snap nodes
@@ -116,7 +121,8 @@ export default function App() {
       return n.map((node) => {
         const prev = prevById.get(node.id);
         const position = positionFor(node.id);
-        return prev ? { ...prev, type: node.type, data: node.data, position } : { ...node, position };
+        const data = { ...node.data, diameter: diameters[node.id], width: widths[node.id] };
+        return prev ? { ...prev, type: node.type, data, position } : { ...node, data, position };
       });
     });
     setEdges(

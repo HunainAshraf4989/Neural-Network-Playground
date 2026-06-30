@@ -4,9 +4,15 @@
 // `data.onDelete`, which App wires to a `disconnect_layers` message — the backend
 // stays the single source of truth. A wide transparent overlay path makes the
 // thin edge easy to hover/click.
+//
+// A connection that jumps more than one column (a residual / skip — the source and
+// target aren't neighbors) is drawn as a DASHED ARC bowing above the spine, the way
+// ResNet/U-Net skips are conventionally drawn, so it reads as structure rather than
+// crossing straight through the layers between. Adjacent edges stay plain beziers.
 
 import { useState } from "react";
 import { BaseEdge, EdgeLabelRenderer, getBezierPath } from "@xyflow/react";
+import { isSkipSpan, skipArc } from "./edgeGeometry.js";
 
 export default function DeletableEdge({
   id,
@@ -22,16 +28,24 @@ export default function DeletableEdge({
   data,
 }) {
   const [hovered, setHovered] = useState(false);
-  const [edgePath, labelX, labelY] = getBezierPath({
-    sourceX,
-    sourceY,
-    sourcePosition,
-    targetX,
-    targetY,
-    targetPosition,
-  });
+  const skip = isSkipSpan(sourceX, targetX);
+
+  let edgePath, labelX, labelY;
+  if (skip) {
+    ({ path: edgePath, labelX, labelY } = skipArc(sourceX, sourceY, targetX, targetY));
+  } else {
+    [edgePath, labelX, labelY] = getBezierPath({
+      sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition,
+    });
+  }
 
   const active = hovered || selected;
+  // Concrete hex (not a CSS var): the var-based React Flow default is lost when
+  // html-to-image clones the detached viewport for PNG export, which would drop the
+  // edges. Skips read in a cooler violet + dashes so they stand apart from the spine.
+  const stroke = skip
+    ? (active ? "#9ab0ff" : "#6b73a8")
+    : (active ? "#5b8def" : "#8b95a7");
 
   return (
     <>
@@ -39,10 +53,12 @@ export default function DeletableEdge({
         id={id}
         path={edgePath}
         markerEnd={markerEnd}
-        // Concrete hex (not a CSS var): the var-based React Flow default is lost
-        // when html-to-image clones the detached viewport for PNG export, which
-        // would drop the edges. It also reads better on the dark theme.
-        style={{ ...style, stroke: active ? "#5b8def" : "#8b95a7", strokeWidth: active ? 2.5 : 1.5 }}
+        style={{
+          ...style,
+          stroke,
+          strokeWidth: active ? 2.5 : 1.5,
+          ...(skip ? { strokeDasharray: "6 5" } : {}),
+        }}
       />
       {/* Invisible wide hit area so the thin edge is easy to hover/click. */}
       <path

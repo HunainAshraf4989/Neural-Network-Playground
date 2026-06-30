@@ -15,8 +15,8 @@
 // hints (the backend `layout` channel) and the user's own drag positions.
 // Pure: takes {nodes, edges}, returns { [nodeId]: {x, y} }.
 
-export const COL_GAP = 120; // column step (px) — a touch wider than a node circle (80)
-export const ROW_GAP = 110; // row step (px)
+export const COL_GAP = 168; // column step (px) — wider than a node cell (116) so edges have room
+export const ROW_GAP = 150; // row step (px)
 
 // "n12" → 12, for stable numeric ordering. Non-conforming ids sort last by id.
 function idOrder(id) {

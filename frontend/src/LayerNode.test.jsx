@@ -6,8 +6,8 @@ import LayerNode from "./LayerNode.jsx";
 // full React Flow provider.
 vi.mock("@xyflow/react", () => ({
   Position: { Left: "left", Right: "right" },
-  Handle: ({ type, position }) => (
-    <div data-testid={`handle-${type}`} data-position={position} />
+  Handle: ({ type, position, style }) => (
+    <div data-testid={`handle-${type}`} data-position={position} data-inset={style?.left ?? style?.right} />
   ),
 }));
 
@@ -33,6 +33,15 @@ describe("LayerNode", () => {
     render(<LayerNode data={{ type: "relu", category: "activation", params: {} }} />);
     expect(screen.getByTestId("handle-target")).toBeInTheDocument();
     expect(screen.getByTestId("handle-source")).toBeInTheDocument();
+  });
+
+  it("insets connection handles to the glyph edge so small nodes stay easy to wire", () => {
+    // a quiet op renders at the small fixed diameter (46) inside the 116 cell, so
+    // each handle is pushed in to (116 - 46) / 2 = 35px rather than floating at the
+    // cell edge away from the visible shape.
+    render(<LayerNode data={{ type: "relu", category: "activation", params: {} }} />);
+    expect(screen.getByTestId("handle-target").dataset.inset).toBe("35");
+    expect(screen.getByTestId("handle-source").dataset.inset).toBe("35");
   });
 
   it("renders null params as 'auto' and arrays bracketed", () => {

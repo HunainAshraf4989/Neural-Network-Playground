@@ -15,7 +15,33 @@ MCP/websocket process. All diagnostics go to stderr; stdout is the one JSON line
 
 import importlib.util
 import json
+import os
 import sys
+
+
+def _cap_memory():
+    """Cap THIS validation process's memory before torch loads, so a pathological
+    architecture (e.g. a linear layer with 100k features → tens of GB of weights)
+    fails with a clean MemoryError instead of driving the whole machine into
+    swap-thrash or tripping the OS OOM killer — which may kill unrelated processes.
+    The 10s timeout in ``validator.py`` guards against *hangs*; this guards against
+    *memory*. The cap is on address space (RLIMIT_AS, so it also covers mmap'd
+    tensor allocations) and is tunable via ``NN_VALIDATION_MEM_MB`` (default 4096).
+    ``resource`` is POSIX-only, so this is a no-op elsewhere; the subprocess
+    isolation still stands either way.
+    """
+    try:
+        import resource
+    except ImportError:
+        return
+    target = int(os.environ.get("NN_VALIDATION_MEM_MB", "4096")) * 1024 * 1024
+    soft, hard = resource.getrlimit(resource.RLIMIT_AS)
+    if hard != resource.RLIM_INFINITY:
+        target = min(target, hard)  # can't raise the hard limit, only lower the soft
+    resource.setrlimit(resource.RLIMIT_AS, (target, hard))
+
+
+_cap_memory()
 
 import torch
 
