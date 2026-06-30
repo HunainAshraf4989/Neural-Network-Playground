@@ -87,3 +87,35 @@ existence, React Flow owns only geometry*:
   broadcast effect now reuses existing node objects so React Flow keeps its measurements (no
   re-measure blink). Covered by `App.desync.test.jsx`, which proves a spurious RF `remove` no longer
   drops a node/edge. Suite now **76** Vitest tests.
+
+## Visual / UX verification (screenshot pass) — ✅ Stage 5 complete
+
+Beyond the automated suites above, the rendered UI was driven end-to-end and screenshotted to confirm
+each component *looks* right, not just that the state is correct. Networks were built straight into the
+live canvas-owning store over the websocket (the same `add_layer`/`connect_layers`/`update_layer`/
+`reset` messages the frontend sends), then the running app at `:5173` was captured headless via Chrome
+DevTools (incl. real hover/click). **15 user-perspective scenarios, no functional bugs:**
+
+- **Empty boot** — palette grouped + color-coded by all 13 categories; toolbar (`Export code`,
+  `Download PNG` correctly *disabled* while empty, `Reset`) + green `connected` status; React Flow controls.
+- **Per-family silhouettes** render with the right glyph + category color + feature-width sizing + dim
+  label: MLP (linear neuron-stacks taper 256→64→10), CNN (orange conv *slabs*, channels grow 32→64),
+  **autoencoder** (visible hourglass pinch at the latent=16), transformer (yellow attention *blocks* with
+  `POS` / `MHA·FFN` sub-labels, embedding circle), **resnet** (residual drawn as a dashed violet *skip
+  arc*; `add` = `+` merge junction with two inputs), **concat** (`∥` junction, branches on separate rows,
+  width = sum of inputs), recurrent (`↺` loop glyph, bidirectional sizing 128→256).
+- **Glyph gallery** — a single chain touching *every* catalog category renders with no blank/broken node.
+- **Interactions** — node click → params panel (typed edit form, Save/Delete/Close); node hover → params
+  tooltip; edge hover → one-click trash delete; `Export code` → modal with self-contained PyTorch.
+- **Layout robustness** — an unwired node parks in column 0 (stays visible, never vanishes); a live
+  `update_layer` (out_features 256→1024) re-sizes the glyph, relabels its dim, and re-flows downstream
+  inherited widths.
+
+Minor cosmetic polish item deferred to Stage 6 (not a functional bug): long type names wrap inside the
+46px "quiet" circle glyphs (e.g. `flatten`→"flatte n", `dropout`, `softmax`, `concat`) — legible but not
+crisp; consider a smaller font / abbreviation / wider quiet glyph.
+
+Environment note (not a frontend issue): live MCP→canvas sync requires the MCP server to *own* `:8765`.
+When a separate backend already holds the port, the MCP store diverges from the canvas store and every
+MCP reply carries the documented `canvas_warning` (CLAUDE.md "busy `:8765`"). The websocket surface is
+unaffected and was used to drive the canvas directly for this pass.

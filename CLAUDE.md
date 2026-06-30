@@ -141,4 +141,4 @@ in-memory store owns the canvas; the fix is to stop the other backend (or set
 
 Staged, gated build — see `.claude/handoff/` for each stage's scope, expected outcome, and the exact
 verification gate. Do not start a stage until the previous gate passes.
-0. ✅ Scaffolding/deps · 1. ✅ Core engine · 2. ✅ Store · 3. ✅ MCP tools · 4. ✅ Websocket · 5. Frontend · 6. Polish/README
+0. ✅ Scaffolding/deps · 1. ✅ Core engine · 2. ✅ Store · 3. ✅ MCP tools · 4. ✅ Websocket · 5. ✅ Frontend · 6. Polish/README
