@@ -8,7 +8,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import * as proto from "./protocol.js";
 
-const DEFAULT_URL = "ws://localhost:8765/ws";
+// Backend websocket URL. Defaults to the local backend; override with the
+// VITE_WS_URL env var (e.g. to point the dev UI at a backend on another port).
+const DEFAULT_URL = import.meta.env?.VITE_WS_URL || "ws://localhost:8765/ws";
 const RECONNECT_MS = 1500;
 
 export function useArchitectureSocket(url = DEFAULT_URL) {

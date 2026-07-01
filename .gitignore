@@ -17,7 +17,14 @@ logs/
 node_modules/
 frontend/dist/
 .vite/
+.env*.local
 
 # Editor / OS
 .DS_Store
 *.swp
+
+# Internal implementation/planning docs — kept locally, not part of the public repo
+/CLAUDE.md
+/Tentative plan.md
+/.claude/handoff/
+/.claude/worktrees/

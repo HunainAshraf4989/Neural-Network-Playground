@@ -209,6 +209,59 @@ def test_websocket_bind_failure_does_not_kill_mcp():
     assert "mcp-only" in errlog.lower() or "already in use" in errlog.lower()
 
 
+def _wait_listening(port, timeout=15.0):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        with socket.socket() as s:
+            s.settimeout(0.25)
+            if s.connect_ex(("127.0.0.1", port)) == 0:
+                return True
+        time.sleep(0.1)
+    return False
+
+
+def test_new_backend_reclaims_canvas_port_from_stale_backend():
+    """Single-canvas-owner guarantee: when a second backend starts on a port
+    already held by a *previous nn-architect backend*, it reclaims the port
+    (terminating the old instance) instead of running headless — so the human
+    always watches the newest session and never has to hunt down stale processes.
+    A *foreign* process is never killed (see the test above); this only fires for
+    a process we can positively identify as our own backend."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+
+    env = {**os.environ, "WS_PORT": str(port), "MODE": "standalone",
+           "LOG_FILE": os.path.join(BACKEND, "_scratch", "test_reclaim.log")}
+
+    def spawn():
+        return subprocess.Popen([PY, "main.py"], cwd=BACKEND, stdin=subprocess.PIPE,
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                text=True, env=env)
+
+    procs = [spawn()]  # the "stale" backend
+    try:
+        assert _wait_listening(port), "first backend never came up"
+        procs.append(spawn())  # the new backend should take the port over
+        stale, fresh = procs
+
+        deadline = time.time() + 15
+        while time.time() < deadline and stale.poll() is None:
+            time.sleep(0.1)
+        assert stale.poll() is not None, "stale backend was not terminated by the new one"
+        # the port is still served — by the new backend, which therefore reclaimed it
+        assert _wait_listening(port), "new backend did not take over the canvas port"
+        assert fresh.poll() is None, "new backend exited instead of serving"
+    finally:
+        for p in procs:
+            p.stdin.close()
+            p.terminate()
+            try:
+                p.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                p.kill()
+
+
 @asynctest
 async def test_all_nine_tools_round_trip_over_real_stdio():
     """Build → validate → generate → mutate → reset through the real stdio client."""
