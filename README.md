@@ -63,6 +63,31 @@ code, not by reading it.
 
 ---
 
+## Examples
+
+A few architectures built on the canvas (these are the tool's own PNG exports):
+
+<div align="center">
+  <img src="assets/autoencoder.png" alt="A dense autoencoder that compresses to an 8-unit latent and reconstructs" width="900">
+  <br/>
+  <sub>A dense autoencoder: compresses down to an 8-unit latent, then reconstructs.</sub>
+</div>
+
+<br/>
+
+<table>
+<tr>
+<td width="50%" align="center"><img src="assets/residual.png" alt="A residual block with a skip connection into an add" width="430"></td>
+<td width="50%" align="center"><img src="assets/transformer.png" alt="A transformer encoder, a stack of self-attention layers" width="430"></td>
+</tr>
+<tr>
+<td align="center"><sub>A residual block: a skip connection into an <code>add</code>.</sub></td>
+<td align="center"><sub>A transformer encoder: a stack of self-attention layers.</sub></td>
+</tr>
+</table>
+
+---
+
 ## How it works
 
 The backend runs as one process. An MCP client launches it over stdio; the same process
