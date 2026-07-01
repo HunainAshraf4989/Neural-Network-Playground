@@ -49,6 +49,7 @@ import {
 } from "./layout.js";
 import { defaultParams } from "./catalog.js";
 import { computeWidths, computeDiameters } from "./dims.js";
+import { expandGraph, isExpandable } from "./expansions.js";
 import * as proto from "./protocol.js";
 
 const NODE_TYPES = { layer: LayerNode };
@@ -63,6 +64,11 @@ export default function App() {
   const [edges, setEdges, rawOnEdgesChange] = useEdgesState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [codeModal, setCodeModal] = useState(null); // {code} | {error} | null
+  // "Expand architecture": a read-only view that substitutes composite layers
+  // (transformer_encoder_layer, multihead_attention, stacked/bidi RNNs) with their
+  // internal subgraph. Purely a frontend view transform (expansions.js) — the store
+  // never sees the sub-nodes (invariant 8), so it can't desync the canvas.
+  const [expanded, setExpanded] = useState(false);
   const rfRef = useRef(null);
   const prevNodeCount = useRef(0);
   const dragOverridesRef = useRef(new Map()); // id -> {x,y}: where the user dragged a node
@@ -82,22 +88,29 @@ export default function App() {
   // broadcast (see the guarded change handlers below), so the canvas can't drift
   // from the agent's view.
   useEffect(() => {
+    // The geometry pipeline (layout/sizing/glyphs) runs on the *view* graph: the
+    // store graph itself, or — when "Expand architecture" is on — that graph with
+    // composite nodes substituted by their internal subgraph. expandGraph is a pure
+    // {nodes,edges,layout} -> {nodes,edges,layout} transform, so everything below is
+    // unchanged. Drag-override cleanup still keys off the *store* ids (existence),
+    // not the view.
+    const graph = expanded ? expandGraph(arch) : arch;
     const ids = new Set((arch?.nodes ?? []).map((n) => n.id));
-    const { nodes: n, edges: e } = toFlowElements(arch);
+    const { nodes: n, edges: e } = toFlowElements(graph);
 
     // Forget drag positions for nodes that no longer exist.
     for (const id of [...dragOverridesRef.current.keys()]) {
       if (!ids.has(id)) dragOverridesRef.current.delete(id);
     }
 
-    const base = computeLayout(arch); // edge-driven columns for every node
-    const hints = arch?.layout ?? {}; // agent placement hints (id -> {col,row})
-    const reachable = reachableFromInput(arch); // ids with a path from input
-    const hasInput = (arch?.nodes ?? []).some((node) => node.type === "input");
+    const base = computeLayout(graph); // edge-driven columns for every node
+    const hints = graph?.layout ?? {}; // agent placement hints (id -> {col,row})
+    const reachable = reachableFromInput(graph); // ids with a path from input
+    const hasInput = (graph?.nodes ?? []).some((node) => node.type === "input");
     // Glyph size + label per node from its feature width (dims.js). Frontend-only,
     // exactly like positions — it never reaches the backend (invariant 8).
-    const diameters = computeDiameters(arch);
-    const widths = computeWidths(arch);
+    const diameters = computeDiameters(graph);
+    const widths = computeWidths(graph);
 
     // Functional updater so we can read the *current* on-screen nodes without
     // adding `nodes` to the deps (which would re-run mid-drag and snap nodes
@@ -122,17 +135,30 @@ export default function App() {
         const prev = prevById.get(node.id);
         const position = positionFor(node.id);
         const data = { ...node.data, diameter: diameters[node.id], width: widths[node.id] };
-        return prev ? { ...prev, type: node.type, data, position } : { ...node, data, position };
+        // Expansion sub-nodes don't exist in the store, so they're inert: React
+        // Flow may place them but never drag/select/connect/delete them.
+        const flags = data.synthetic
+          ? { draggable: false, selectable: false, connectable: false, deletable: false }
+          : { draggable: true, selectable: true, connectable: true, deletable: true };
+        return prev
+          ? { ...prev, type: node.type, data, position, ...flags }
+          : { ...node, data, position, ...flags };
       });
     });
     setEdges(
       e.map((edge) => ({
         ...edge,
         type: "deletable",
-        data: { onDelete: () => send(proto.disconnectLayers(edge.source, edge.target)) },
+        // Synthetic (expansion) edges aren't store edges, so they can't be deleted;
+        // a `null` onDelete hides the hover ✕ (see DeletableEdge).
+        data: {
+          onDelete: edge.source.includes("/") || edge.target.includes("/")
+            ? null
+            : () => send(proto.disconnectLayers(edge.source, edge.target)),
+        },
       })),
     );
-  }, [arch, setNodes, setEdges, send]);
+  }, [arch, expanded, setNodes, setEdges, send]);
 
   // Re-frame only when a node is ADDED, so a new node is always visible — but
   // leave the view alone on delete and on param edits (which previously caused
@@ -150,16 +176,38 @@ export default function App() {
     }
   }, [arch]);
 
+  // Toggling expand changes the node set wholesale, so re-fit the view to it.
+  useEffect(() => {
+    if (rfRef.current) {
+      requestAnimationFrame(() =>
+        rfRef.current?.fitView({ padding: 0.2, maxZoom: 0.85, duration: 300 }),
+      );
+    }
+  }, [expanded]);
+
   const selectedNode = useMemo(
     () => nodes.find((n) => n.id === selectedId) ?? null,
     [nodes, selectedId],
   );
 
+  // Whether anything in the current graph actually has an expansion (a plain
+  // 1-layer RNN doesn't), so the button can disable itself when there's nothing
+  // to show.
+  const hasExpandable = useMemo(
+    () => (arch?.nodes ?? []).some(isExpandable),
+    [arch],
+  );
+
   const add = useCallback((type) => send(proto.addLayer(type, defaultParams(type))), [send]);
 
+  // The expanded view is read-only (its sub-nodes aren't in the store), so wiring
+  // is disabled while it's on — toggle off to edit the real graph.
   const onConnect = useCallback(
-    (c) => send(proto.connectLayers(c.source, c.target)),
-    [send],
+    (c) => {
+      if (expanded) return;
+      send(proto.connectLayers(c.source, c.target));
+    },
+    [expanded, send],
   );
   const onNodesDelete = useCallback(
     (deleted) => deleted.forEach((n) => send(proto.removeLayer(n.id))),
@@ -246,6 +294,18 @@ export default function App() {
           <span className={`status status--${connected ? "ok" : "down"}`}>
             {connected ? "connected" : "disconnected"}
           </span>
+          <button
+            type="button"
+            className={`toolbar__btn${expanded ? " toolbar__btn--active" : ""}`}
+            onClick={() => {
+              setExpanded((v) => !v);
+              setSelectedId(null);
+            }}
+            disabled={!hasExpandable && !expanded}
+            title="Expand composite layers (transformers, attention, stacked RNNs) into their internal sub-layers"
+          >
+            {expanded ? "Collapse" : "Expand"}
+          </button>
           <button type="button" className="toolbar__btn" onClick={onExportCode} disabled={!connected}>
             Export code
           </button>
@@ -270,7 +330,10 @@ export default function App() {
           onNodesDelete={onNodesDelete}
           onEdgesDelete={onEdgesDelete}
           onNodeDragStop={onNodeDragStop}
-          onNodeClick={(_, node) => setSelectedId(node.id)}
+          onNodeClick={(_, node) => {
+            if (node.data?.synthetic) return; // sub-nodes have no editable store entry
+            setSelectedId(node.id);
+          }}
           onPaneClick={() => setSelectedId(null)}
           snapToGrid
           snapGrid={GRID}

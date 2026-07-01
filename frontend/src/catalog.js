@@ -106,8 +106,12 @@ export function categoryOf(type) {
   return CATALOG[type]?.category;
 }
 
+export function colorOfCategory(category) {
+  return CATEGORY_COLORS[category] ?? FALLBACK_COLOR;
+}
+
 export function colorOf(type) {
-  return CATEGORY_COLORS[categoryOf(type)] ?? FALLBACK_COLOR;
+  return colorOfCategory(categoryOf(type));
 }
 
 // Fresh deep copy of a type's default params, ready to send in add_layer.
