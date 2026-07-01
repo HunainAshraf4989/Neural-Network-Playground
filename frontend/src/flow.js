@@ -14,7 +14,17 @@ export function toFlowElements(arch) {
     id: n.id,
     type: "layer",
     position: { x: 0, y: 0 }, // overwritten by App from layout.js placement
-    data: { type: n.type, params: n.params, category: categoryOf(n.type) },
+    // `category`/`label`/`synthetic` are honored when present (expansion sub-nodes
+    // carry them); a normal broadcast node has none, so category falls back to the
+    // catalog and label/synthetic stay undefined — identical to the pre-expansion
+    // behavior.
+    data: {
+      type: n.type,
+      params: n.params,
+      category: n.category ?? categoryOf(n.type),
+      label: n.label,
+      synthetic: n.synthetic,
+    },
   }));
 
   const flowEdges = edges.map((e) => ({

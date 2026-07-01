@@ -121,6 +121,13 @@ body { background: var(--bg); color: var(--text); }
 }
 .toolbar__btn:hover:not(:disabled) { background: var(--bg-elevated); border-color: var(--accent); }
 .toolbar__btn:disabled { opacity: 0.45; cursor: not-allowed; }
+/* "Expand architecture" toggle, lit while the expanded view is on. */
+.toolbar__btn--active,
+.toolbar__btn--active:hover:not(:disabled) {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #0b1020;
+}
 .notice { font-size: 12px; max-width: 320px; font-weight: 500; }
 .notice--error { color: var(--danger); }
 .notice--ack { color: #2bd49b; }
@@ -137,6 +144,12 @@ body { background: var(--bg); color: var(--text); }
   align-items: center;
   justify-content: center;
 }
+
+/* Expansion sub-nodes are a derived, read-only view of a composite layer's
+   internals — dimmed and dashed-outlined so they read as "inside this block,"
+   not as editable graph nodes. */
+.nn-node--synthetic { opacity: 0.85; }
+.nn-node--synthetic .nn-glyph { border-style: dashed; }
 
 /* Base glyph: a color-coded shell with the layer's signature gradient. `--d` (the
    diameter) is set per node from dims.js; each family derives its footprint from it. */

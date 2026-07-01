@@ -11,7 +11,7 @@
 // the glyph and the key params live in a hover tooltip (full set in the panel).
 
 import { Handle, Position } from "@xyflow/react";
-import { colorOf } from "./catalog.js";
+import { colorOfCategory } from "./catalog.js";
 
 const MAX_INLINE_PARAMS = 4;
 const DEFAULT_DIAMETER = 76; // used when a node is rendered without a computed size
@@ -63,7 +63,11 @@ function blockSub(type) {
 }
 
 export default function LayerNode({ data, selected }) {
-  const color = colorOf(data.type);
+  // Color from category (not type) so expansion sub-nodes with a synthetic type —
+  // e.g. the attention core — still color correctly; for a normal node the
+  // category IS the type's category, so this is unchanged.
+  const color = colorOfCategory(data.category);
+  const label = data.label ?? data.type; // sub-nodes carry a friendlier label
   const params = Object.entries(data.params ?? {}).slice(0, MAX_INLINE_PARAMS);
   const family = glyphFamily(data.category);
   const diameter = QUIET_CATEGORIES.has(data.category)
@@ -76,7 +80,11 @@ export default function LayerNode({ data, selected }) {
   const handleInset = Math.max(0, (NODE_BOX - glyphWidth) / 2);
 
   return (
-    <div className="nn-node" title={data.type} style={{ "--node-color": color, "--d": `${diameter}px` }}>
+    <div
+      className={`nn-node${data.synthetic ? " nn-node--synthetic" : ""}`}
+      title={label}
+      style={{ "--node-color": color, "--d": `${diameter}px` }}
+    >
       {data.type !== "input" && (
         <Handle type="target" position={Position.Left} className="nn-handle" style={{ left: handleInset }} />
       )}
@@ -89,7 +97,7 @@ export default function LayerNode({ data, selected }) {
         )}
         {family === "loop" && <span className="nn-glyph__loop" aria-hidden="true">↺</span>}
         {family === "merge" && <span className="nn-glyph__sign" aria-hidden="true">{mergeSign(data.type)}</span>}
-        <span className="nn-node__label">{data.type}</span>
+        <span className="nn-node__label">{label}</span>
         {sub && <span className="nn-glyph__sub" aria-hidden="true">{sub}</span>}
       </div>
 
