@@ -171,6 +171,14 @@ export function isExpandable(node) {
   return expandNode(node) != null;
 }
 
+// Whether the node can be UNGROUPED — persistently decomposed into real store
+// nodes by the backend (unlike Expand, a read-only view). Same families as
+// isExpandable EXCEPT plain multihead_attention: its expansion needs the
+// synthetic scaled_dot_product_attention type, which isn't in the catalog yet.
+export function isUngroupable(node) {
+  return node?.type !== "multihead_attention" && isExpandable(node);
+}
+
 // Substitute every expandable node in `arch` with its internal subgraph, rewiring
 // external edges to the subgraph's entry/exit, and return a graph of the same
 // {nodes, edges, layout} shape. Non-expandable nodes pass through untouched.

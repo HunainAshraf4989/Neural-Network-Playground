@@ -98,8 +98,8 @@ export function computeWidths(arch) {
 // (32→784 reads the same as 64→1568). A graph whose layers are all one width
 // renders them all at the midpoint rather than implying a bottleneck that isn't
 // there.
-export const MIN_DIAMETER = 44;
-export const MAX_DIAMETER = 100;
+export const MIN_DIAMETER = 60;
+export const MAX_DIAMETER = 128;
 
 export function computeDiameters(arch, { minD = MIN_DIAMETER, maxD = MAX_DIAMETER } = {}) {
   const widths = computeWidths(arch);
@@ -116,4 +116,85 @@ export function computeDiameters(arch, { minD = MIN_DIAMETER, maxD = MAX_DIAMETE
     out[id] = Math.round(minD + t * (maxD - minD));
   }
   return out;
+}
+
+// How many representative neuron dots to DRAW for a layer's glyph (used only by the
+// linear "neuron-stack" glyph). The count scales with the layer's true feature
+// width — per-graph, sqrt-normalized exactly like computeDiameters — so a 768-unit
+// layer visibly shows more neurons than a 128 than a 64. It's capped at MAX_NEURONS
+// (the glyph then draws top/⋮/bottom to imply the omitted middle) and never exceeds
+// the layer's actual neuron count. The *true* count still shows in the dim label,
+// so this is a legibility cue, never a claim about the exact number of units.
+export const MIN_NEURONS = 3;
+export const MAX_NEURONS = 6;
+
+export function computeNeuronCounts(arch, { minN = MIN_NEURONS, maxN = MAX_NEURONS } = {}) {
+  const widths = computeWidths(arch);
+  const vals = Object.values(widths);
+  if (vals.length === 0) return {};
+
+  const lo = Math.sqrt(Math.min(...vals));
+  const hi = Math.sqrt(Math.max(...vals));
+  const span = hi - lo;
+
+  const out = {};
+  for (const [id, w] of Object.entries(widths)) {
+    const t = span === 0 ? 0.5 : (Math.sqrt(w) - lo) / span;
+    out[id] = Math.min(w, Math.round(minN + t * (maxN - minN)));
+  }
+  return out;
+}
+
+// Geometry of a neuron circle in the EXPANDED "classic neural network" view. Shared
+// by the node (LayerNode draws the circles via CSS at this size/gap) and the edge
+// (NeuronBundleEdge draws the fully-connected lines between them), so the lines land
+// exactly on the circles. A column of `count` circles is centered on the node's
+// vertical center, so circle i sits at center + this offset.
+//
+// When a layer's true width exceeds the circles drawn (`truncated`), the column
+// shows a vertical "⋮" for the omitted middle neurons. The ⋮ takes exactly one
+// circle-slot (same NEURON_STEP rhythm), so the whole column has `count + 1` slots
+// and the circles occupy every slot except the middle one. Both the node's circles
+// and the edge's line endpoints are derived from the same slot math below, so the
+// gap where the ⋮ sits stays consistent between them.
+export const NEURON_CIRCLE = 14; // px, circle diameter
+export const NEURON_GAP = 8; // px, vertical gap between circles
+export const NEURON_STEP = NEURON_CIRCLE + NEURON_GAP;
+
+// Total vertical slots in the column: `count` circles, plus one for the ⋮ when the
+// layer is truncated. The ⋮ occupies the middle slot; index below.
+function slotCount(count, truncated) {
+  const c = Math.max(1, count | 0);
+  return truncated ? c + 1 : c;
+}
+function ellipsisSlot(count, truncated) {
+  return truncated ? Math.floor(slotCount(count, truncated) / 2) : -1;
+}
+
+export function neuronYOffsets(count, truncated = false) {
+  const slots = slotCount(count, truncated);
+  const skip = ellipsisSlot(count, truncated);
+  const offsets = [];
+  for (let j = 0; j < slots; j++) {
+    if (j === skip) continue; // the ⋮ has no circle → no edge endpoint here
+    offsets.push((j - (slots - 1) / 2) * NEURON_STEP);
+  }
+  return offsets;
+}
+
+// How many circles render above the ⋮ (the rest go below). Used by LayerNode so its
+// DOM order matches the slot layout the offsets assume.
+export function neuronSplit(count, truncated) {
+  const c = Math.max(1, count | 0);
+  if (!truncated) return { top: c, bottom: 0 };
+  const top = ellipsisSlot(count, truncated); // circles fill slots [0..mid-1]
+  return { top, bottom: c - top };
+}
+
+// Half the pixel height of a `count`-circle column (including the ⋮ slot when
+// truncated) — LayerNode uses it to place the type/dim labels just below the column
+// (which can be taller than the node cell).
+export function neuronColumnHalfHeight(count, truncated = false) {
+  const slots = slotCount(count, truncated);
+  return (slots * NEURON_CIRCLE + (slots - 1) * NEURON_GAP) / 2;
 }

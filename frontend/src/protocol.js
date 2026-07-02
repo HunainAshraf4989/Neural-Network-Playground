@@ -23,6 +23,13 @@ export function disconnectLayers(from_id, to_id) {
   return { type: "disconnect_layers", from_id, to_id };
 }
 
+// Ungroup: ask the backend to replace a composite node (transformer block,
+// stacked/bidirectional RNN) with its real editable sub-layers — a persistent
+// store mutation, unlike the read-only Expand view.
+export function ungroup(node_id) {
+  return { type: "ungroup", node_id };
+}
+
 export function resetArchitecture() {
   return { type: "reset_architecture" };
 }

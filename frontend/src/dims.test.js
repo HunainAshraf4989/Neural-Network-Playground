@@ -3,9 +3,15 @@ import {
   ownWidth,
   computeWidths,
   computeDiameters,
+  computeNeuronCounts,
+  neuronYOffsets,
+  neuronSplit,
+  NEURON_STEP,
   FALLBACK_WIDTH,
   MIN_DIAMETER,
   MAX_DIAMETER,
+  MIN_NEURONS,
+  MAX_NEURONS,
 } from "./dims.js";
 
 describe("ownWidth", () => {
@@ -128,5 +134,64 @@ describe("computeDiameters", () => {
 
   it("returns empty for an empty graph", () => {
     expect(computeDiameters({ nodes: [], edges: [] })).toEqual({});
+  });
+});
+
+describe("computeNeuronCounts", () => {
+  it("draws more neurons for wider layers (widest at MAX, narrowest at MIN)", () => {
+    const arch = {
+      nodes: [
+        { id: "n1", type: "linear", params: { out_features: 64 } },
+        { id: "n2", type: "linear", params: { out_features: 768 } },
+      ],
+      edges: [{ from: "n1", to: "n2" }],
+    };
+    const c = computeNeuronCounts(arch);
+    expect(c.n1).toBe(MIN_NEURONS);
+    expect(c.n2).toBe(MAX_NEURONS);
+    expect(c.n2).toBeGreaterThan(c.n1);
+  });
+
+  it("never draws more dots than the layer actually has neurons", () => {
+    const arch = { nodes: [{ id: "n1", type: "linear", params: { out_features: 3 } }], edges: [] };
+    expect(computeNeuronCounts(arch).n1).toBe(3);
+  });
+
+  it("returns empty for an empty graph", () => {
+    expect(computeNeuronCounts({ nodes: [], edges: [] })).toEqual({});
+  });
+});
+
+describe("neuronYOffsets", () => {
+  it("centers the column symmetrically about the node center", () => {
+    expect(neuronYOffsets(1)).toEqual([0]);
+    expect(neuronYOffsets(3)).toEqual([-NEURON_STEP, 0, NEURON_STEP]);
+    const four = neuronYOffsets(4);
+    expect(four[0]).toBeCloseTo(-four[3]);
+    expect(four[1]).toBeCloseTo(-four[2]);
+  });
+
+  it("truncated, keeps `count` endpoints but leaves the middle ⋮ slot empty", () => {
+    const off = neuronYOffsets(6, true); // 6 circles + 1 ⋮ = 7 slots, middle skipped
+    expect(off).toHaveLength(6);
+    // 7 slots span offsets -3..+3 * STEP; the middle (0) is the ⋮ and is absent.
+    expect(off).not.toContain(0);
+    expect(off[0]).toBeCloseTo(-3 * NEURON_STEP);
+    expect(off[5]).toBeCloseTo(3 * NEURON_STEP);
+    expect(off).toEqual(off.map((_, i, a) => a[i])); // sanity: ordered
+    expect(off[0]).toBeCloseTo(-off[5]); // symmetric about center
+  });
+});
+
+describe("neuronSplit", () => {
+  it("puts every circle in one group when not truncated", () => {
+    expect(neuronSplit(6, false)).toEqual({ top: 6, bottom: 0 });
+  });
+
+  it("splits circles around the ⋮ slot when truncated, summing to `count`", () => {
+    const { top, bottom } = neuronSplit(6, true);
+    expect(top + bottom).toBe(6);
+    expect(top).toBe(3); // 7 slots, ⋮ at slot 3 → 3 above, 3 below
+    expect(bottom).toBe(3);
   });
 });

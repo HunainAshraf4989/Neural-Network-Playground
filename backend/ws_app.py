@@ -38,6 +38,7 @@ _DISPATCH = {
     "remove_layer": ("remove_layer", ("node_id",)),
     "connect_layers": ("connect_layers", ("from_id", "to_id")),
     "disconnect_layers": ("disconnect_layers", ("from_id", "to_id")),
+    "ungroup": ("ungroup", ("node_id",)),
     "reset_architecture": ("reset_architecture", ()),
 }
 

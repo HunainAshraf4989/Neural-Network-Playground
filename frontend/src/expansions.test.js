@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { expandGraph, expandNode, isExpandable, EXPANDABLE_TYPES } from "./expansions.js";
+import { expandGraph, expandNode, isExpandable, isUngroupable, EXPANDABLE_TYPES } from "./expansions.js";
 
 const idsOf = (graph) => graph.nodes.map((n) => n.id);
 const hasEdge = (graph, from, to) =>
@@ -134,6 +134,24 @@ describe("edges between two expandable nodes", () => {
     expect(hasEdge(out, "n1/out", "n2/q")).toBe(true);
     expect(hasEdge(out, "n1/out", "n2/k")).toBe(true);
     expect(hasEdge(out, "n1/out", "n2/v")).toBe(true);
+  });
+});
+
+describe("isUngroupable", () => {
+  it("allows the transformer block and stacked/bidirectional recurrent cells", () => {
+    expect(isUngroupable({ type: "transformer_encoder_layer", params: { d_model: 32, nhead: 4 } })).toBe(true);
+    expect(isUngroupable({ type: "lstm", params: { num_layers: 2, bidirectional: false } })).toBe(true);
+    expect(isUngroupable({ type: "gru", params: { num_layers: 1, bidirectional: true } })).toBe(true);
+  });
+
+  it("excludes plain multihead_attention (needs the synthetic SDPA type)", () => {
+    expect(isUngroupable({ type: "multihead_attention", params: { embed_dim: 32, num_heads: 4 } })).toBe(false);
+  });
+
+  it("excludes 1-layer unidirectional recurrent cells and everything else", () => {
+    expect(isUngroupable({ type: "rnn", params: { num_layers: 1, bidirectional: false } })).toBe(false);
+    expect(isUngroupable({ type: "relu", params: {} })).toBe(false);
+    expect(isUngroupable(null)).toBe(false);
   });
 });
 

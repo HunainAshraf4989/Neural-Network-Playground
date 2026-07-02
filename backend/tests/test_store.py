@@ -525,6 +525,184 @@ async def test_layout_hint_dropped_on_remove_and_cleared_on_reset():
     assert nid2  # silence unused
 
 
+# --------------------------------------------------------------------------- #
+# ungroup — composite -> real editable sub-layers
+# --------------------------------------------------------------------------- #
+async def _transformer_chain(s):
+    """input(seq) -> transformer_encoder_layer -> linear; returns the three ids."""
+    n1 = (await s.add_layer("input", {"shape": [10, 32], "dtype": "float32"}))["node_id"]
+    n2 = (await s.add_layer("transformer_encoder_layer",
+                            {"d_model": 32, "nhead": 4, "dim_feedforward": 64,
+                             "dropout": 0.1}))["node_id"]
+    n3 = (await s.add_layer("linear", {"in_features": 32, "out_features": 10}))["node_id"]
+    await s.connect_layers(n1, n2)
+    await s.connect_layers(n2, n3)
+    return n1, n2, n3
+
+
+@asynctest
+async def test_ungroup_transformer_replaces_with_subgraph():
+    s = ArchitectureStore()
+    n1, n2, n3 = await _transformer_chain(s)
+    res = await s.ungroup(n2)
+    assert res["ungrouped"] == n2
+    ids = res["node_ids"]
+    assert set(ids) == {"attn", "do1", "res1", "norm1", "fc1", "act",
+                        "do2", "fc2", "do3", "res2", "norm2"}
+
+    arch = await s.get_architecture()
+    node_ids = [n["id"] for n in arch["nodes"]]
+    assert n2 not in node_ids
+    assert len(arch["nodes"]) == 2 + 11  # input + linear + 11 sub-layers
+
+    by_id = {n["id"]: n for n in arch["nodes"]}
+    assert by_id[ids["attn"]]["type"] == "multihead_attention"
+    assert by_id[ids["attn"]]["params"] == {"embed_dim": 32, "num_heads": 4, "dropout": 0.1}
+    assert by_id[ids["fc1"]]["params"] == {"in_features": 32, "out_features": 64}
+    assert by_id[ids["fc2"]]["params"] == {"in_features": 64, "out_features": 32}
+    assert by_id[ids["norm1"]]["params"] == {"normalized_shape": 32}
+
+    edges = {(e["from"], e["to"]) for e in arch["edges"]}
+    # incoming edge fans into BOTH entries (self-attn and the attention residual)
+    assert (n1, ids["attn"]) in edges
+    assert (n1, ids["res1"]) in edges
+    # outgoing edge is rewired from the exit
+    assert (ids["norm2"], n3) in edges
+    # the feed-forward residual skip exists
+    assert (ids["norm1"], ids["res2"]) in edges
+    # no edge references the removed composite
+    assert not any(n2 in pair for pair in edges)
+
+
+@asynctest
+async def test_ungrouped_transformer_validates_by_real_execution():
+    s = ArchitectureStore()
+    _n1, n2, _n3 = await _transformer_chain(s)
+    await s.ungroup(n2)
+    report = await s.validate_architecture()
+    assert report["valid"] is True, report
+    # (N, L, E) with the fixed N=2 dummy batch, ending in the 10-way linear
+    assert report["output_shapes"] == [[2, 10, 10]]
+
+
+@asynctest
+async def test_ungroup_stacked_lstm_chains_cells():
+    s = ArchitectureStore()
+    n1 = (await s.add_layer("input", {"shape": [10, 16], "dtype": "float32"}))["node_id"]
+    n2 = (await s.add_layer("lstm", {"input_size": 16, "hidden_size": 32,
+                                     "num_layers": 3}))["node_id"]
+    n3 = (await s.add_layer("relu", {}))["node_id"]
+    await s.connect_layers(n1, n2)
+    await s.connect_layers(n2, n3)
+    res = await s.ungroup(n2)
+    ids = res["node_ids"]
+    assert set(ids) == {"l0", "l1", "l2"}
+
+    arch = await s.get_architecture()
+    by_id = {n["id"]: n for n in arch["nodes"]}
+    for name in ("l0", "l1", "l2"):
+        assert by_id[ids[name]]["type"] == "lstm"
+        assert by_id[ids[name]]["params"]["num_layers"] == 1
+    assert by_id[ids["l0"]]["params"]["input_size"] == 16
+    assert by_id[ids["l1"]]["params"]["input_size"] == 32  # fed layer-0 hidden state
+    assert by_id[ids["l2"]]["params"]["input_size"] == 32
+
+    edges = {(e["from"], e["to"]) for e in arch["edges"]}
+    assert edges == {(n1, ids["l0"]), (ids["l0"], ids["l1"]),
+                     (ids["l1"], ids["l2"]), (ids["l2"], n3)}
+
+
+@asynctest
+async def test_ungroup_bidirectional_gru_splits_and_concats():
+    s = ArchitectureStore()
+    n1 = (await s.add_layer("input", {"shape": [10, 16], "dtype": "float32"}))["node_id"]
+    n2 = (await s.add_layer("gru", {"input_size": 16, "hidden_size": 32,
+                                    "bidirectional": True}))["node_id"]
+    await s.connect_layers(n1, n2)
+    res = await s.ungroup(n2)
+    ids = res["node_ids"]
+    assert set(ids) == {"l0f", "l0b", "l0c"}
+
+    arch = await s.get_architecture()
+    by_id = {n["id"]: n for n in arch["nodes"]}
+    assert by_id[ids["l0f"]]["type"] == "gru"
+    assert by_id[ids["l0f"]]["params"]["bidirectional"] is False
+    assert by_id[ids["l0c"]]["type"] == "concat"
+    assert by_id[ids["l0c"]]["params"] == {"dim": -1}
+
+    edges = {(e["from"], e["to"]) for e in arch["edges"]}
+    # the input feeds BOTH directions; both feed the concat
+    assert edges == {(n1, ids["l0f"]), (n1, ids["l0b"]),
+                     (ids["l0f"], ids["l0c"]), (ids["l0b"], ids["l0c"])}
+
+
+@asynctest
+async def test_ungroup_preserves_downstream_concat_input_order():
+    # Edge insertion order decides concat argument order, so rewiring must keep
+    # the ungrouped branch's edge at its original position in the edge list.
+    s = ArchitectureStore()
+    n1 = (await s.add_layer("input", {"shape": [10, 16], "dtype": "float32"}))["node_id"]
+    n2 = (await s.add_layer("lstm", {"input_size": 16, "hidden_size": 32,
+                                     "num_layers": 2}))["node_id"]
+    n3 = (await s.add_layer("linear", {"in_features": 16, "out_features": 32}))["node_id"]
+    n4 = (await s.add_layer("concat", {"dim": -1}))["node_id"]
+    await s.connect_layers(n1, n2)
+    await s.connect_layers(n1, n3)
+    await s.connect_layers(n2, n4)  # lstm branch is concat's FIRST input
+    await s.connect_layers(n3, n4)
+    ids = (await s.ungroup(n2))["node_ids"]
+    into_concat = [e["from"] for e in (await s.get_architecture())["edges"]
+                   if e["to"] == n4]
+    assert into_concat == [ids["l1"], n3]  # exit replaced the lstm, order intact
+
+
+@asynctest
+async def test_ungroup_plain_recurrent_rejected():
+    s = ArchitectureStore()
+    nid = (await s.add_layer("rnn", {"input_size": 8, "hidden_size": 16}))["node_id"]
+    with pytest.raises(ValueError, match="no internal structure"):
+        await s.ungroup(nid)
+    # nothing changed and no ids were consumed
+    assert [n["id"] for n in (await s.get_architecture())["nodes"]] == [nid]
+    assert (await s.add_layer("relu", {}))["node_id"] == "n2"
+
+
+@asynctest
+async def test_ungroup_non_composite_rejected():
+    s = ArchitectureStore()
+    nid = (await s.add_layer("relu", {}))["node_id"]
+    with pytest.raises(ValueError, match="cannot ungroup"):
+        await s.ungroup(nid)
+
+
+@asynctest
+async def test_ungroup_multihead_attention_rejected():
+    # Deliberately not ungroupable: its decomposition needs the synthetic
+    # scaled_dot_product_attention type that isn't in the catalog yet.
+    s = ArchitectureStore()
+    nid = (await s.add_layer("multihead_attention",
+                             {"embed_dim": 32, "num_heads": 4}))["node_id"]
+    with pytest.raises(ValueError, match="cannot ungroup"):
+        await s.ungroup(nid)
+
+
+@asynctest
+async def test_ungroup_unknown_node_rejected():
+    s = ArchitectureStore()
+    with pytest.raises(ValueError, match="unknown node"):
+        await s.ungroup("n99")
+
+
+@asynctest
+async def test_ungroup_drops_composite_layout_hint():
+    s = ArchitectureStore()
+    nid = (await s.add_layer("transformer_encoder_layer",
+                             {"d_model": 32, "nhead": 4},
+                             layout={"col": 3, "row": 1}))["node_id"]
+    await s.ungroup(nid)
+    assert (await s.get_architecture())["layout"] == {}
+
+
 @asynctest
 async def test_layout_hint_validation():
     s = ArchitectureStore()

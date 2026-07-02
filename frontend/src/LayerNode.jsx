@@ -10,30 +10,52 @@
 // one target handle, so merge nodes need no special wiring); the type name shows on
 // the glyph and the key params live in a hover tooltip (full set in the panel).
 
+import { Fragment } from "react";
 import { Handle, Position } from "@xyflow/react";
 import { colorOfCategory } from "./catalog.js";
+import { NEURON_CIRCLE, neuronColumnHalfHeight, neuronSplit } from "./dims.js";
+
+// Categories that, in the EXPANDED view, render as a column of neuron circles (the
+// classic deep-net diagram) rather than an iconic glyph: the input features, the
+// fully-connected layers, and the per-neuron activations applied to them.
+export const NEURON_CATEGORIES = new Set(["input", "linear", "activation"]);
 
 const MAX_INLINE_PARAMS = 4;
-const DEFAULT_DIAMETER = 76; // used when a node is rendered without a computed size
+const DEFAULT_DIAMETER = 92; // used when a node is rendered without a computed size
 
 // In-place ops (activation/norm/dropout/flatten/pooling) operate on whatever
 // tensor flows through them — they aren't representations, so they render at a
 // fixed small size and stay "quiet", letting the structural layers (linear/conv/…)
 // carry the silhouette instead of a giant relu dwarfing its own linear.
 const QUIET_CATEGORIES = new Set(["activation", "norm", "regularization", "shape", "pooling"]);
-const QUIET_DIAMETER = 46;
+const QUIET_DIAMETER = 64;
 
 // The node sits in a fixed-size cell (matches .nn-node in styles.css) with the
 // glyph centered inside, so connection handles must be INSET to the glyph's real
 // edge — otherwise they float in the empty cell, away from the visible shape, and
 // the graph becomes fiddly to wire by hand. Each family's width relative to `--d`:
-const NODE_BOX = 116;
+const NODE_BOX = 150;
 const WIDTH_FACTOR = { stack: 0.72, block: 1.18, loop: 1.18, merge: 0.82, tag: 1.12 };
 
 function formatValue(v) {
   if (v === null) return "auto";
   if (Array.isArray(v)) return `[${v.join(",")}]`;
   return String(v);
+}
+
+// Break long, underscore-joined type names (e.g. transformer_encoder_layer) at
+// their word boundaries so a label wraps BY WORD — never mid-letter — and stays
+// inside the glyph. A `<wbr>` after each underscore/space is a *soft* break the
+// browser only takes when the line overflows (paired with overflow-wrap in the
+// .nn-node__label CSS, which only splits a single word as a last resort).
+function labelWithBreaks(label) {
+  return String(label)
+    .split(/([_ ])/) // keep the separators as their own chunks
+    .map((chunk, i) =>
+      chunk === "_" || chunk === " "
+        ? <Fragment key={i}>{chunk}<wbr /></Fragment>
+        : <Fragment key={i}>{chunk}</Fragment>,
+    );
 }
 
 // Glyph family per category — the visual vocabulary that makes each NN family
@@ -55,6 +77,33 @@ function mergeSign(type) {
   return type === "concat" ? "∥" : "+";
 }
 
+// The EXPANDED view of a per-neuron layer (input / linear / activation): a column of
+// large solid neuron circles, the classic deep-net diagram. `count` (from
+// dims.computeNeuronCounts) is a representative number scaled to the layer's size, so
+// a wider layer shows more circles; the exact size stays in the dim label, and the
+// fully-connected lines between columns are drawn by NeuronBundleEdge. Collapsed,
+// these layers keep their iconic glyph — the neurons only appear once you Expand.
+//
+// When the layer truly has more neurons than we draw (`truncated`), a vertical ⋮ sits
+// in the middle to stand for the omitted units — the classic "…and N more neurons"
+// cue. It occupies one circle-slot (see dims.neuronSplit / neuronYOffsets), so the
+// bundle edges still land on the visible circles.
+function NeuronColumn({ count, truncated }) {
+  const n = count && count > 0 ? count : 3;
+  const { top, bottom } = neuronSplit(n, truncated);
+  return (
+    <span className="nn-neuron-col" aria-hidden="true">
+      {Array.from({ length: top }, (_, i) => <i key={`t${i}`} />)}
+      {truncated && (
+        <span className="nn-neuron-col__more" aria-hidden="true">
+          <b /><b /><b />
+        </span>
+      )}
+      {Array.from({ length: bottom }, (_, i) => <i key={`b${i}`} />)}
+    </span>
+  );
+}
+
 function blockSub(type) {
   if (type === "multihead_attention") return "MHA";
   if (type === "transformer_encoder_layer") return "MHA·FFN";
@@ -70,36 +119,55 @@ export default function LayerNode({ data, selected }) {
   const label = data.label ?? data.type; // sub-nodes carry a friendlier label
   const params = Object.entries(data.params ?? {}).slice(0, MAX_INLINE_PARAMS);
   const family = glyphFamily(data.category);
+  // In the EXPANDED view, per-neuron layers (input / linear / activation) render as a
+  // column of neuron circles — the classic deep-net diagram. Collapsed, or for the
+  // synthetic sub-layers inside an expanded composite block, they keep their glyph.
+  const showNeurons = data.expanded && !data.synthetic && NEURON_CATEGORIES.has(data.category);
   const diameter = QUIET_CATEGORIES.has(data.category)
     ? QUIET_DIAMETER
     : (data.diameter ?? DEFAULT_DIAMETER);
   const sub = family === "block" ? blockSub(data.type) : null;
+  const neuronCount = data.neurons && data.neurons > 0 ? data.neurons : 3;
+  // Show the ⋮ only when the layer's real width genuinely exceeds the circles drawn,
+  // so a small layer (e.g. a 3-unit output) renders its exact neurons with no ellipsis.
+  const neuronsTruncated = showNeurons && data.width != null && data.width > neuronCount;
   // Inset handles to the glyph's left/right edge so they sit ON the shape, making
-  // hand-wiring intuitive regardless of how small the glyph is.
-  const glyphWidth = diameter * (WIDTH_FACTOR[family] ?? 1);
+  // hand-wiring intuitive; for a neuron column the "shape" is the circle stack.
+  const glyphWidth = showNeurons ? NEURON_CIRCLE : diameter * (WIDTH_FACTOR[family] ?? 1);
   const handleInset = Math.max(0, (NODE_BOX - glyphWidth) / 2);
+  const style = { "--node-color": color, "--d": `${diameter}px` };
+  // Column half-height positions the labels just below the circles (see CSS), since a
+  // neuron column can be taller than the node cell.
+  if (showNeurons) style["--col-h"] = `${neuronColumnHalfHeight(neuronCount, neuronsTruncated)}px`;
 
   return (
     <div
-      className={`nn-node${data.synthetic ? " nn-node--synthetic" : ""}`}
+      className={`nn-node${data.synthetic ? " nn-node--synthetic" : ""}${showNeurons ? " nn-node--neurons" : ""}`}
       title={label}
-      style={{ "--node-color": color, "--d": `${diameter}px` }}
+      style={style}
     >
       {data.type !== "input" && (
         <Handle type="target" position={Position.Left} className="nn-handle" style={{ left: handleInset }} />
       )}
 
-      <div className={`nn-glyph nn-glyph--${family}${selected ? " is-selected" : ""}`}>
-        {family === "stack" && (
-          <span className="nn-glyph__dots" aria-hidden="true">
-            <i /><i /><i /><i />
-          </span>
-        )}
-        {family === "loop" && <span className="nn-glyph__loop" aria-hidden="true">↺</span>}
-        {family === "merge" && <span className="nn-glyph__sign" aria-hidden="true">{mergeSign(data.type)}</span>}
-        <span className="nn-node__label">{label}</span>
-        {sub && <span className="nn-glyph__sub" aria-hidden="true">{sub}</span>}
-      </div>
+      {showNeurons ? (
+        <>
+          <NeuronColumn count={neuronCount} truncated={neuronsTruncated} />
+          <span className="nn-node__label">{labelWithBreaks(label)}</span>
+        </>
+      ) : (
+        <div className={`nn-glyph nn-glyph--${family}${selected ? " is-selected" : ""}`}>
+          {family === "stack" && (
+            <span className="nn-glyph__dots" aria-hidden="true">
+              <i /><i /><i /><i />
+            </span>
+          )}
+          {family === "loop" && <span className="nn-glyph__loop" aria-hidden="true">↺</span>}
+          {family === "merge" && <span className="nn-glyph__sign" aria-hidden="true">{mergeSign(data.type)}</span>}
+          <span className="nn-node__label">{labelWithBreaks(label)}</span>
+          {sub && <span className="nn-glyph__sub" aria-hidden="true">{sub}</span>}
+        </div>
+      )}
 
       {data.width != null && (
         <span className="nn-node__dim" aria-hidden="true">{data.width}</span>

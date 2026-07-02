@@ -5,11 +5,11 @@ import { COL_GAP } from "./layout.js";
 describe("isSkipSpan", () => {
   it("treats an adjacent-column edge as a normal (non-skip) edge", () => {
     // adjacent handles are about (COL_GAP - cell width) apart — under one column
-    expect(isSkipSpan(0, COL_GAP - 116)).toBe(false);
+    expect(isSkipSpan(0, COL_GAP - 150)).toBe(false);
   });
 
   it("treats an edge that jumps over a layer as a skip", () => {
-    expect(isSkipSpan(0, 2 * COL_GAP - 116)).toBe(true);
+    expect(isSkipSpan(0, 2 * COL_GAP - 150)).toBe(true);
   });
 
   it("never treats a backward/zero span as a skip", () => {

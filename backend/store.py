@@ -27,6 +27,92 @@ import layers
 import validator
 
 
+# --------------------------------------------------------------------------- #
+# Ungroup blueprints
+#
+# The persistent counterpart of the frontend's read-only "Expand" view
+# (frontend/src/expansions.js): each blueprint describes how a composite layer
+# decomposes into REAL catalog types + internal wiring, as name-keyed specs the
+# store turns into real nodes (fresh ids). Kept in lock-step with expansions.js
+# so what Expand *shows* is exactly what Ungroup *creates*. Plain
+# multihead_attention is deliberately absent: its expansion needs a synthetic
+# scaled_dot_product_attention type that isn't in the catalog (yet).
+#
+# A blueprint is ``(specs, edges, entries, exit)``:
+#   specs   — [(name, type, params)] in creation order
+#   edges   — [(from_name, to_name)] internal wiring
+#   entries — names every external predecessor is rewired into
+#   exit    — name whose output feeds every external successor
+# --------------------------------------------------------------------------- #
+
+def _transformer_blueprint(params):
+    """nn.TransformerEncoderLayer (post-norm default, activation=relu), exactly
+    as codegen emits it:
+      x = norm1(x + dropout(self_attn(x, x, x)))
+      x = norm2(x + dropout(linear2(dropout(relu(linear1(x))))))
+    The block input feeds self-attn AND the attention-skip residual.
+    """
+    d, p = params["d_model"], params["dropout"]
+    ff = params["dim_feedforward"]
+    specs = [
+        ("attn", "multihead_attention",
+         {"embed_dim": d, "num_heads": params["nhead"], "dropout": p}),
+        ("do1", "dropout", {"p": p}),
+        ("res1", "add", {}),
+        ("norm1", "layernorm", {"normalized_shape": d}),
+        ("fc1", "linear", {"in_features": d, "out_features": ff}),
+        ("act", "relu", {}),
+        ("do2", "dropout", {"p": p}),
+        ("fc2", "linear", {"in_features": ff, "out_features": d}),
+        ("do3", "dropout", {"p": p}),
+        ("res2", "add", {}),
+        ("norm2", "layernorm", {"normalized_shape": d}),
+    ]
+    edges = [
+        ("attn", "do1"), ("do1", "res1"), ("res1", "norm1"),
+        ("norm1", "fc1"), ("fc1", "act"), ("act", "do2"), ("do2", "fc2"),
+        ("fc2", "do3"), ("do3", "res2"), ("res2", "norm2"),
+        ("norm1", "res2"),  # feed-forward residual skip
+    ]
+    return specs, edges, ["attn", "res1"], "norm2"
+
+
+def _recurrent_blueprint(layer_type, params):
+    """A stacked/bidirectional rnn|lstm|gru unrolls into its per-layer cells
+    (bidirectional: forward + backward cell -> concat on the feature dim).
+    Returns ``None`` for a plain 1-layer unidirectional cell — nothing
+    graph-level to unroll (gate internals are below this canvas's altitude).
+    """
+    num_layers = params["num_layers"]
+    bidi = bool(params["bidirectional"])
+    if num_layers <= 1 and not bidi:
+        return None
+    h = params["hidden_size"]
+    specs, edges = [], []
+    entries, prev_exit = None, None
+    for i in range(num_layers):
+        in_size = params["input_size"] if i == 0 else h * (2 if bidi else 1)
+        cell_params = {"input_size": in_size, "hidden_size": h,
+                       "num_layers": 1, "bidirectional": False}
+        if bidi:
+            fwd, bwd, cat = f"l{i}f", f"l{i}b", f"l{i}c"
+            specs += [(fwd, layer_type, dict(cell_params)),
+                      (bwd, layer_type, dict(cell_params)),
+                      (cat, "concat", {"dim": -1})]
+            edges += [(fwd, cat), (bwd, cat)]
+            layer_entries, layer_exit = [fwd, bwd], cat
+        else:
+            name = f"l{i}"
+            specs.append((name, layer_type, cell_params))
+            layer_entries, layer_exit = [name], name
+        if prev_exit is not None:
+            edges += [(prev_exit, t) for t in layer_entries]
+        if entries is None:
+            entries = layer_entries
+        prev_exit = layer_exit
+    return specs, edges, entries, prev_exit
+
+
 class ArchitectureStore:
     def __init__(self):
         self.nodes = []          # list[{"id", "type", "params"}], creation order
@@ -233,6 +319,70 @@ class ArchitectureStore:
                 raise ValueError(f"edge '{from_id}' -> '{to_id}' does not exist")
             self.edges.remove(match)
             return {"removed": True}
+
+    async def ungroup(self, node_id):
+        """Replace a composite node with its real, editable internal sub-layers
+        (the persistent counterpart of the frontend's read-only Expand view).
+        Sub-nodes get fresh store ids; internal edges are wired per the type's
+        blueprint; external predecessors are rewired into the blueprint's
+        ``entries`` and its ``exit`` into the external successors; finally the
+        composite is removed. All-or-nothing: any rejection rolls back.
+
+        Ungroupable: ``transformer_encoder_layer``, and ``rnn``/``lstm``/``gru``
+        with ``num_layers > 1`` or ``bidirectional=true``.
+        Returns ``{ungrouped, node_ids}`` with ``node_ids`` mapping each
+        sub-layer's blueprint name (e.g. ``attn``, ``fc1``) to its new id.
+        """
+        async with self._lock:
+            node = self._node(node_id)
+            if node is None:
+                raise ValueError(f"unknown node '{node_id}'")
+            layer_type = node["type"]
+            if layer_type == "transformer_encoder_layer":
+                blueprint = _transformer_blueprint(node["params"])
+            elif layer_type in ("rnn", "lstm", "gru"):
+                blueprint = _recurrent_blueprint(layer_type, node["params"])
+                if blueprint is None:
+                    raise ValueError(
+                        f"cannot ungroup '{node_id}': a 1-layer unidirectional "
+                        f"{layer_type} has no internal structure to unroll — only "
+                        "num_layers > 1 or bidirectional=true decomposes")
+            else:
+                raise ValueError(
+                    f"cannot ungroup '{node_id}' (type '{layer_type}'); only "
+                    "transformer_encoder_layer and stacked/bidirectional "
+                    "rnn/lstm/gru can be ungrouped")
+            specs, internal_edges, entries, exit_name = blueprint
+
+            # _add_one/_connect_one only ever append and node dicts are never
+            # mutated here, so shallow list/dict copies are a full rollback.
+            saved_nodes, saved_edges = list(self.nodes), list(self.edges)
+            saved_layout, saved_counter = dict(self.layout), self._id_counter
+            try:
+                ids = {name: self._add_one(t, params) for name, t, params in specs}
+                for a, b in internal_edges:
+                    self._connect_one(ids[a], ids[b])
+                # Rewire the composite's external edges IN PLACE (each pred feeds
+                # every entry; the exit feeds each successor). In-place keeps edge
+                # insertion order, which decides argument order for a downstream
+                # concat — remove+append would silently reorder it.
+                rewired = []
+                for e in self.edges:
+                    if e["to"] == node_id:
+                        rewired.extend({"from": e["from"], "to": ids[t]} for t in entries)
+                    elif e["from"] == node_id:
+                        rewired.append({"from": ids[exit_name], "to": e["to"]})
+                    else:
+                        rewired.append(e)
+                self.edges = rewired
+                self.nodes = [n for n in self.nodes if n["id"] != node_id]
+                self.layout.pop(node_id, None)
+            except ValueError:
+                self.nodes, self.edges = saved_nodes, saved_edges
+                self.layout, self._id_counter = saved_layout, saved_counter
+                raise
+            return {"ungrouped": node_id,
+                    "node_ids": {name: ids[name] for name, _t, _p in specs}}
 
     async def get_catalog(self):
         """Return the layer catalog (types, categories, required + optional params

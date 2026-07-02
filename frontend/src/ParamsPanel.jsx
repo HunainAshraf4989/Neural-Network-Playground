@@ -5,9 +5,10 @@
 
 import { useEffect, useState } from "react";
 import { CATALOG } from "./catalog.js";
+import { isUngroupable } from "./expansions.js";
 import { paramKind, coerce, toRaw } from "./paramTypes.js";
 
-export default function ParamsPanel({ node, onSave, onClose, onDelete }) {
+export default function ParamsPanel({ node, onSave, onClose, onDelete, onUngroup }) {
   // Per-param edit state, re-seeded whenever a different node is selected.
   const [form, setForm] = useState({});
 
@@ -76,6 +77,14 @@ export default function ParamsPanel({ node, onSave, onClose, onDelete }) {
 
         <div className="params__actions">
           <button type="submit" className="params__save">Save</button>
+          {/* Composite blocks (transformer, stacked/bidi RNN) can be broken
+              into their real sub-layers — a persistent store mutation, unlike
+              the read-only Expand view. */}
+          {isUngroupable({ type, params: node.data.params }) && (
+            <button type="button" className="params__ungroup" onClick={() => onUngroup(node.id)}>
+              Ungroup
+            </button>
+          )}
           <button type="button" className="params__delete" onClick={() => onDelete(node.id)}>
             Delete
           </button>
