@@ -14,10 +14,11 @@ back. Shapes are checked by running the generated PyTorch, not by reading it.
   <img alt="Node 20" src="https://img.shields.io/badge/Node.js-20-339933?logo=node.js&logoColor=white">
   <img alt="PyTorch executed for validation" src="https://img.shields.io/badge/PyTorch-executed_to_validate-EE4C2C?logo=pytorch&logoColor=white">
   <img alt="React + React Flow canvas" src="https://img.shields.io/badge/React-live_canvas-61DAFB?logo=react&logoColor=black">
-  <img alt="MCP: 12 tools" src="https://img.shields.io/badge/MCP-12_tools-6E56CF">
+  <img alt="MCP: 13 tools" src="https://img.shields.io/badge/MCP-13_tools-6E56CF">
 </p>
 
 <a href="#quick-start"><b>Quick start</b></a> ·
+<a href="#see-inside-composite-layers">Expand &amp; Ungroup</a> ·
 <a href="#how-it-works">How it works</a> ·
 <a href="#validation-by-execution">Validation</a> ·
 <a href="#the-agents-tools">Tools</a> ·
@@ -44,6 +45,9 @@ code, not by reading it.
 - 🧠 &nbsp;**Built for a cold agent.** A `get_catalog` discovery tool, errors written to be
   acted on (an unknown type lists the valid ones; a missing param names them all at once),
   and atomic batch builds so a 100-node model isn't hundreds of round-trips.
+- 🔍 &nbsp;**Composites open up.** Expand is a read-only view: transformers and stacked RNNs
+  unfold into their internals, and dense layers draw as the classic neuron diagram. Ungroup
+  goes further and swaps a composite for its real, editable sub-layers, correctly rewired.
 
 ---
 
@@ -85,6 +89,37 @@ A few architectures built on the canvas (these are the tool's own PNG exports):
 <td align="center"><sub>A transformer encoder: a stack of self-attention layers.</sub></td>
 </tr>
 </table>
+
+---
+
+## See inside composite layers
+
+A `transformer_encoder_layer` is one node on the canvas, but it does not have to stay opaque.
+Two features open it up, one shallow and one deep:
+
+**Expand** is a read-only x-ray. Composite blocks unfold into their internal wiring, and
+per-neuron layers render as the classic deep-net diagram, so a network's silhouette reads at
+a glance. Columns are sampled to stay legible (a `⋮` marks the omitted middle), and every
+connection line still lands on a real circle. Toggle it off and nothing has changed.
+
+<div align="center">
+  <img src="assets/neuron-view.png" alt="A 784-512-64-10 MLP drawn as the classic fully-connected neuron diagram" width="900">
+  <br/>
+  <sub>A 784-512-64-10 MLP in the expanded view, tapering like the classic textbook figure.</sub>
+</div>
+
+**Ungroup** makes it real. The composite is replaced in the shared graph by its actual
+sub-layers: self-attention, the residual adds, the norms, the feed-forward pair, every edge
+correctly rewired and every node fully editable. Delete a residual, retune the feed-forward
+width, revalidate. It is a store mutation like any other, so the AI can do it too
+(`ungroup_layer`), and it works on transformer encoder layers and on stacked or
+bidirectional RNNs.
+
+<div align="center">
+  <img src="assets/ungrouped-transformer.png" alt="A transformer encoder layer ungrouped into attention, dropouts, residual adds, norms and the feed-forward pair" width="900">
+  <br/>
+  <sub>The transformer block from the gallery, ungrouped: both residual skips arc over their sub-chains.</sub>
+</div>
 
 ---
 
@@ -250,7 +285,7 @@ logs go to stderr and this file, never stdout), `NN_VALIDATION_MAX_PARAMS` (defa
 
 ## The agent's tools
 
-Twelve MCP tools, each a thin wrapper over one store method. `get_catalog` is the discovery
+Thirteen MCP tools, each a thin wrapper over one store method. `get_catalog` is the discovery
 surface: call it first and you get every layer type with its category, required params, and
 optional params with defaults, so a cold agent never has to guess. Errors are written to be
 acted on: an unknown type lists the known ones; a missing-param error names *all* the missing
@@ -261,10 +296,12 @@ params at once.
 | `add_layer` · `add_layers` | `get_catalog` |
 | `update_layer` · `remove_layer` | `get_architecture` |
 | `connect_layers` · `connect_layers_batch` | `validate_architecture` |
-| `disconnect_layers` · `reset_architecture` | `generate_code` |
+| `disconnect_layers` · `ungroup_layer` | `generate_code` |
+| `reset_architecture` | |
 
 `add_layers` and `connect_layers_batch` build an entire network in one atomic call
-(all-or-nothing), so a 100-node model isn't hundreds of round-trips.
+(all-or-nothing), so a 100-node model isn't hundreds of round-trips. `ungroup_layer`
+decomposes a composite into its real sub-layers, atomically and correctly rewired.
 
 ---
 
@@ -290,7 +327,7 @@ one schema entry plus one codegen mapping (and one palette entry on the frontend
 backend/
   main.py            entry point: store + MCP stdio + websocket
   store.py           ArchitectureStore, the only place the graph is mutated
-  mcp_tools.py       the 12 MCP tools (adapters over the store)
+  mcp_tools.py       the 13 MCP tools (adapters over the store)
   ws_app.py          websocket server (adapters over the same store)
   layers.py          layer catalog: schemas, defaults, per-type validation
   codegen.py         graph to standalone PyTorch source
@@ -305,8 +342,8 @@ frontend/
 ## Tests
 
 ```bash
-cd backend && python -m pytest     # 112 tests
-cd frontend && npm test            # 109 tests
+cd backend && python -m pytest     # 126 tests
+cd frontend && npm test            # 132 tests
 ```
 
 ## Scope
