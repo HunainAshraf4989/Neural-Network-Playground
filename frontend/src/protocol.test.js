@@ -41,6 +41,10 @@ describe("protocol builders", () => {
     });
   });
 
+  it("ungroup", () => {
+    expect(proto.ungroup("n4")).toEqual({ type: "ungroup", node_id: "n4" });
+  });
+
   it("reset_architecture", () => {
     expect(proto.resetArchitecture()).toEqual({ type: "reset_architecture" });
   });

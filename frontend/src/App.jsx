@@ -437,6 +437,12 @@ export default function App() {
           send(proto.removeLayer(id));
           setSelectedId(null);
         }}
+        onUngroup={(id) => {
+          // The composite is replaced by its sub-layers on the next broadcast,
+          // so the selection would point at a node that no longer exists.
+          send(proto.ungroup(id));
+          setSelectedId(null);
+        }}
         onClose={() => setSelectedId(null)}
       />
 

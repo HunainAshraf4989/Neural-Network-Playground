@@ -68,6 +68,44 @@ describe("ParamsPanel", () => {
     });
   });
 
+  it("shows Ungroup only for a composite node and calls onUngroup with the id", () => {
+    const onUngroup = vi.fn();
+    render(
+      <ParamsPanel
+        node={node("transformer_encoder_layer", { d_model: 32, nhead: 4, dim_feedforward: 64, dropout: 0.1 })}
+        onSave={() => {}}
+        onDelete={() => {}}
+        onUngroup={onUngroup}
+        onClose={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Ungroup" }));
+    expect(onUngroup).toHaveBeenCalledWith("n2");
+  });
+
+  it("shows Ungroup for a stacked LSTM but not a plain one", () => {
+    const stacked = node("lstm", { input_size: 8, hidden_size: 16, num_layers: 2, bidirectional: false });
+    const { rerender } = render(
+      <ParamsPanel node={stacked} onSave={() => {}} onDelete={() => {}} onUngroup={() => {}} onClose={() => {}} />,
+    );
+    expect(screen.getByRole("button", { name: "Ungroup" })).toBeInTheDocument();
+    const plain = node("lstm", { input_size: 8, hidden_size: 16, num_layers: 1, bidirectional: false });
+    rerender(
+      <ParamsPanel node={plain} onSave={() => {}} onDelete={() => {}} onUngroup={() => {}} onClose={() => {}} />,
+    );
+    expect(screen.queryByRole("button", { name: "Ungroup" })).not.toBeInTheDocument();
+  });
+
+  it("hides Ungroup for non-composites and plain multihead_attention", () => {
+    for (const n of [node("relu", {}), node("multihead_attention", { embed_dim: 32, num_heads: 4, dropout: 0 })]) {
+      const { unmount } = render(
+        <ParamsPanel node={n} onSave={() => {}} onDelete={() => {}} onUngroup={() => {}} onClose={() => {}} />,
+      );
+      expect(screen.queryByRole("button", { name: "Ungroup" })).not.toBeInTheDocument();
+      unmount();
+    }
+  });
+
   it("calls onDelete with the node id", () => {
     const onDelete = vi.fn();
     render(<ParamsPanel node={node("relu", {})} onSave={() => {}} onDelete={onDelete} onClose={() => {}} />);

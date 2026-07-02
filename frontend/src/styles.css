@@ -424,6 +424,8 @@ body { background: var(--bg); color: var(--text); }
 .params__actions { display: flex; gap: 8px; margin-top: 8px; }
 .params__save { background: var(--accent); color: #fff; border: none; padding: 7px 16px; border-radius: 7px; cursor: pointer; font-weight: 600; }
 .params__save:hover { background: #4a7ce0; }
+.params__ungroup { background: transparent; color: var(--accent); border: 1px solid var(--accent); padding: 7px 13px; border-radius: 7px; cursor: pointer; }
+.params__ungroup:hover { background: rgba(91, 141, 239, 0.12); }
 .params__delete { background: transparent; color: var(--danger); border: 1px solid var(--danger); padding: 7px 13px; border-radius: 7px; cursor: pointer; }
 .params__delete:hover { background: rgba(240, 111, 91, 0.12); }
 .params__close { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); padding: 7px 13px; border-radius: 7px; cursor: pointer; }

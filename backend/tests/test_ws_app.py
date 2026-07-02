@@ -116,6 +116,25 @@ def test_reset_architecture_acks_then_broadcasts_empty():
         assert _recv(ws)["data"] == {"nodes": [], "edges": [], "layout": {}}
 
 
+def test_ungroup_acks_then_broadcasts_subgraph():
+    with _client() as c, c.websocket_connect("/ws") as ws:
+        _recv(ws)
+        _add(ws, "input", {"shape": [10, 32], "dtype": "float32"})
+        _add(ws, "transformer_encoder_layer", {"d_model": 32, "nhead": 4})
+        ws.send_json({"type": "connect_layers", "from_id": "n1", "to_id": "n2"})
+        _recv(ws); _recv(ws)
+        ws.send_json({"type": "ungroup", "node_id": "n2"})
+        assert _recv(ws) == {"type": "ack", "ok": True}
+        data = _recv(ws)["data"]
+        ids = [n["id"] for n in data["nodes"]]
+        assert "n2" not in ids
+        assert len(ids) == 1 + 11  # input + the transformer's 11 sub-layers
+        # the input was rewired into both entries (self-attn + residual add)
+        types = {n["id"]: n["type"] for n in data["nodes"]}
+        entry_types = sorted(types[e["to"]] for e in data["edges"] if e["from"] == "n1")
+        assert entry_types == ["add", "multihead_attention"]
+
+
 # -- generate_code: read-only reply, NO broadcast --------------------------
 
 def test_generate_code_returns_source_without_broadcast():
@@ -237,6 +256,14 @@ def test_connect_second_input_into_non_merge_errors():
         _recv(ws); _recv(ws)
         _assert_error_no_broadcast(ws, {"type": "connect_layers", "from_id": "n3",
                                         "to_id": "n2"}, needle="already has an incoming edge")
+
+
+def test_ungroup_non_composite_errors():
+    with _client() as c, c.websocket_connect("/ws") as ws:
+        _recv(ws)
+        _add(ws, "relu")
+        _assert_error_no_broadcast(ws, {"type": "ungroup", "node_id": "n1"},
+                                   needle="cannot ungroup")
 
 
 def test_disconnect_nonexistent_edge_errors():

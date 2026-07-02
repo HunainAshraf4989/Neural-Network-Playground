@@ -192,7 +192,7 @@ def test_websocket_bind_failure_does_not_kill_mcp():
 
         tools = reply_for(2)
         assert tools is not None, "MCP did not answer tools/list despite the websocket bind failing"
-        assert len(tools["result"]["tools"]) == 12
+        assert len(tools["result"]["tools"]) == 13
         assert mutate is not None, "MCP did not answer add_layer despite the websocket bind failing"
         warnings = mutate["result"]["structuredContent"]["warnings"]
         assert any("canvas unavailable" in w.lower() for w in warnings), warnings
@@ -277,7 +277,7 @@ async def test_all_nine_tools_round_trip_over_real_stdio():
     async with stdio_client(params) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
-            assert len((await session.list_tools()).tools) == 12
+            assert len((await session.list_tools()).tools) == 13
 
             async def add(t, prm=None):
                 return payload(await session.call_tool(

@@ -87,9 +87,9 @@ async def _build_cnn(session):
 # tool registration / schema
 # --------------------------------------------------------------------------- #
 EXPECTED_TOOLS = {
-    "add_layer", "add_layers", "update_layer", "remove_layer", "connect_layers",
-    "connect_layers_batch", "disconnect_layers", "get_catalog", "get_architecture",
-    "validate_architecture", "generate_code", "reset_architecture",
+    "add_layer", "add_layers", "update_layer", "remove_layer", "ungroup_layer",
+    "connect_layers", "connect_layers_batch", "disconnect_layers", "get_catalog",
+    "get_architecture", "validate_architecture", "generate_code", "reset_architecture",
 }
 
 
@@ -109,6 +109,7 @@ async def test_tool_input_schemas():
         assert set(by_name["update_layer"].inputSchema["required"]) == {"node_id", "params"}
         assert set(by_name["connect_layers"].inputSchema["required"]) == {"from_id", "to_id"}
         assert set(by_name["remove_layer"].inputSchema["required"]) == {"node_id"}
+        assert set(by_name["ungroup_layer"].inputSchema["required"]) == {"node_id"}
         assert set(by_name["add_layers"].inputSchema["required"]) == {"layers"}
         assert set(by_name["connect_layers_batch"].inputSchema["required"]) == {"edges"}
         # layout is optional on add_layer (only type+params required)
@@ -219,6 +220,36 @@ async def test_remove_layer_unknown_node_rejected():
     async with harness() as (session, _store, _c):
         msg = err(await session.call_tool("remove_layer", {"node_id": "n42"}))
         assert "unknown node" in msg
+
+
+# --------------------------------------------------------------------------- #
+# ungroup_layer
+# --------------------------------------------------------------------------- #
+@asynctest
+async def test_ungroup_layer_decomposes_and_broadcasts():
+    async with harness() as (session, _store, c):
+        n1 = await _add(session, "input", {"shape": [10, 32], "dtype": "float32"})
+        n2 = await _add(session, "transformer_encoder_layer", {"d_model": 32, "nhead": 4})
+        ok(await session.call_tool("connect_layers", {"from_id": n1, "to_id": n2}))
+        before = c.n
+        res = ok(await session.call_tool("ungroup_layer", {"node_id": n2}))
+        assert res["ungrouped"] == n2
+        assert set(res["node_ids"]) == {"attn", "do1", "res1", "norm1", "fc1",
+                                        "act", "do2", "fc2", "do3", "res2", "norm2"}
+        assert c.n == before + 1  # one broadcast for the whole decomposition
+        arch = ok(await session.call_tool("get_architecture", {}))
+        assert n2 not in [n["id"] for n in arch["nodes"]]
+        assert len(arch["nodes"]) == 1 + 11
+
+
+@asynctest
+async def test_ungroup_layer_rejection_does_not_broadcast():
+    async with harness() as (session, _store, c):
+        n1 = await _add(session, "relu")
+        before = c.n
+        msg = err(await session.call_tool("ungroup_layer", {"node_id": n1}))
+        assert "cannot ungroup" in msg
+        assert c.n == before
 
 
 # --------------------------------------------------------------------------- #

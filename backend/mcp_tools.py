@@ -97,6 +97,22 @@ def build_mcp(store, broadcast=None, canvas_warning=None) -> FastMCP:
         return flag(result)
 
     @mcp.tool()
+    async def ungroup_layer(node_id: str) -> dict[str, Any]:
+        """Replace a composite layer with its real, editable internal sub-layers,
+        rewiring every edge (predecessors feed the sub-graph's entries; its exit
+        feeds the successors), then removing the composite. Ungroupable types:
+        ``transformer_encoder_layer`` (self-attn + residuals + norms +
+        feed-forward) and ``rnn``/``lstm``/``gru`` with ``num_layers > 1`` or
+        ``bidirectional=true`` (per-layer cells, concat for bidirectional).
+        Returns ``{ungrouped, node_ids}`` where ``node_ids`` maps each
+        sub-layer's role name (e.g. ``attn``, ``fc1``, ``l0``) to its new node
+        id."""
+        log.info("mcp ungroup_layer node_id=%s", node_id)
+        result = await store.ungroup(node_id)
+        await fire()
+        return flag(result)
+
+    @mcp.tool()
     async def connect_layers(from_id: str, to_id: str) -> dict[str, Any]:
         """Add a directed edge ``from_id -> to_id``. Rejects: missing id,
         self-loop, ``to_id`` is the input node, duplicate edge, a second incoming
