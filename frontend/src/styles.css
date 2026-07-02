@@ -138,8 +138,8 @@ body { background: var(--bg); color: var(--text); }
    chain forms a taper (the autoencoder hourglass) without moving any positions. */
 .nn-node {
   position: relative;
-  width: 116px;
-  height: 116px;
+  width: 150px;
+  height: 150px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -187,18 +187,80 @@ body { background: var(--bg); color: var(--text); }
     0 2px 6px rgba(0, 0, 0, 0.3);
 }
 
-/* stack — a fully-connected layer drawn as a tall column of neurons. */
+/* stack — the COLLAPSED (default) linear layer: a compact pill with a few neuron
+   dots. Expand swaps it for the neuron box below. */
 .nn-glyph--stack {
   width: calc(var(--d, 76px) * 0.72);
   border-radius: calc(var(--d, 76px) * 0.36);
 }
-.nn-glyph--stack .nn-node__label { white-space: nowrap; font-size: 8px; letter-spacing: -0.01em; }
+.nn-glyph--stack .nn-node__label { white-space: nowrap; font-size: 9.5px; letter-spacing: -0.01em; }
 .nn-glyph__dots { display: flex; flex-direction: column; gap: 2.5px; align-items: center; }
 .nn-glyph__dots i {
   width: 5px;
   height: 5px;
   border-radius: 50%;
   background: color-mix(in srgb, var(--node-color, #8c8c8c) 70%, #fff);
+}
+
+/* neurons — the EXPANDED "classic neural network" view of a per-neuron layer
+   (input / linear / activation): a column of large solid neuron circles, centered on
+   the node so the fully-connected lines (NeuronBundleEdge) land on them. No box — the
+   circles ARE the layer. Circle size/gap match dims.js (NEURON_CIRCLE / NEURON_GAP) so
+   the node and the edge agree on where each neuron sits. */
+.nn-neuron-col {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  pointer-events: none;
+}
+.nn-neuron-col i {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--node-color, #8c8c8c);
+  box-shadow: 0 0 0 1px rgba(10, 14, 22, 0.55);
+}
+/* The ⋮ that stands in for a truncated layer's omitted middle neurons. It occupies
+   exactly one circle-slot (14px tall, same NEURON_STEP rhythm as the circles) so the
+   bundle edges — which skip this slot — stay aligned with the drawn circles. */
+.nn-neuron-col__more {
+  height: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+.nn-neuron-col__more b {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--node-color, #8c8c8c);
+  opacity: 0.8;
+}
+/* Labels sit just below the column (which can be taller than the node cell), placed
+   from its half-height --col-h set per node in LayerNode. */
+.nn-node--neurons .nn-node__label {
+  position: absolute;
+  left: 50%;
+  top: calc(50% + var(--col-h, 40px) + 8px);
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+.nn-node--neurons .nn-node__dim {
+  top: calc(50% + var(--col-h, 40px) + 23px);
+}
+
+/* fully-connected lines between two neuron columns (the classic crisscross). Thin and
+   faint so a dense bundle stays legible behind the circles. */
+.nn-bundle {
+  stroke-width: 1;
+  opacity: 0.3;
 }
 
 /* block — a transformer / attention sub-layer composite. */
@@ -234,12 +296,15 @@ body { background: var(--bg); color: var(--text); }
 }
 
 .nn-node__label {
-  font-size: 9.5px;
+  font-size: 11px;
   font-weight: 700;
-  line-height: 1.1;
+  line-height: 1.15;
   color: color-mix(in srgb, var(--node-color, #e6eaf2) 60%, #ffffff);
-  word-break: break-word;
-  hyphens: auto;
+  /* Wrap BY WORD: break only at the word boundaries LayerNode marks with <wbr>
+     (underscores/spaces), and fall back to splitting inside a single word only
+     when that word alone can't fit — never chop a fitting word mid-letter. */
+  word-break: normal;
+  overflow-wrap: break-word;
 }
 
 /* the feature width the layer emits, parked just under the glyph. */

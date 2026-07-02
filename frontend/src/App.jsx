@@ -30,10 +30,11 @@ import {
 import { toPng } from "html-to-image";
 import "@xyflow/react/dist/style.css";
 
-import LayerNode from "./LayerNode.jsx";
+import LayerNode, { NEURON_CATEGORIES } from "./LayerNode.jsx";
 import LayerPalette from "./LayerPalette.jsx";
 import ParamsPanel from "./ParamsPanel.jsx";
 import DeletableEdge from "./DeletableEdge.jsx";
+import NeuronBundleEdge from "./NeuronBundleEdge.jsx";
 import CodeModal from "./CodeModal.jsx";
 import { useArchitectureSocket } from "./useArchitectureSocket.js";
 import { toFlowElements, dropRemoveChanges } from "./flow.js";
@@ -48,15 +49,19 @@ import {
   snapToCell,
 } from "./layout.js";
 import { defaultParams } from "./catalog.js";
-import { computeWidths, computeDiameters } from "./dims.js";
+import { computeWidths, computeDiameters, computeNeuronCounts } from "./dims.js";
 import { expandGraph, isExpandable } from "./expansions.js";
 import * as proto from "./protocol.js";
 
 const NODE_TYPES = { layer: LayerNode };
-const EDGE_TYPES = { deletable: DeletableEdge };
+const EDGE_TYPES = { deletable: DeletableEdge, neuronBundle: NeuronBundleEdge };
 const IMAGE_BG = "#0f1420"; // matches the dark canvas background
 // Dragging snaps onto the column/row grid so nodes stay aligned into clean columns.
 const GRID = [COL_GAP, ROW_GAP];
+// Upper bound for auto-fit zoom. fitView still zooms OUT to fit a big graph; this
+// only caps how far it zooms IN on a small one — kept generous so a 1–3 node net
+// renders large enough to actually read (was 0.85, which left small nets tiny).
+const FIT_MAX_ZOOM = 1.4;
 
 export default function App() {
   const { arch, connected, notice, send, requestCode } = useArchitectureSocket();
@@ -72,6 +77,8 @@ export default function App() {
   const rfRef = useRef(null);
   const prevNodeCount = useRef(0);
   const dragOverridesRef = useRef(new Map()); // id -> {x,y}: where the user dragged a node
+  const prevIdsRef = useRef(new Set()); // store ids seen last broadcast, to spot a new node
+  const pendingDropRef = useRef(null); // {x,y}: where a palette item was just dropped
 
   // The backend is authoritative for *which* nodes/edges exist; the frontend
   // owns pixel layout. Positions are recomputed every broadcast from the graph
@@ -103,6 +110,22 @@ export default function App() {
       if (!ids.has(id)) dragOverridesRef.current.delete(id);
     }
 
+    // A palette drop remembered where it landed (pendingDropRef). Once the backend
+    // echoes the new node back, park it at that spot — the SAME frontend-only
+    // mechanism as a manual drag (a drag override), so the drop position never
+    // reaches the store (invariant 8). Match by the single id that's new since the
+    // last broadcast; if a drop somehow produced no/many new nodes, drop the hint.
+    if (pendingDropRef.current) {
+      const fresh = [...ids].filter((id) => !prevIdsRef.current.has(id));
+      if (fresh.length === 1) {
+        dragOverridesRef.current.set(fresh[0], pendingDropRef.current);
+        pendingDropRef.current = null;
+      } else if (fresh.length > 1) {
+        pendingDropRef.current = null;
+      }
+    }
+    prevIdsRef.current = ids;
+
     const base = computeLayout(graph); // edge-driven columns for every node
     const hints = graph?.layout ?? {}; // agent placement hints (id -> {col,row})
     const reachable = reachableFromInput(graph); // ids with a path from input
@@ -111,6 +134,9 @@ export default function App() {
     // exactly like positions — it never reaches the backend (invariant 8).
     const diameters = computeDiameters(graph);
     const widths = computeWidths(graph);
+    // Representative neuron count per node — drawn only by the linear glyph so the
+    // number of neurons on screen reads as the layer's size (see LayerNode).
+    const neurons = computeNeuronCounts(graph);
 
     // Functional updater so we can read the *current* on-screen nodes without
     // adding `nodes` to the deps (which would re-run mid-drag and snap nodes
@@ -134,7 +160,7 @@ export default function App() {
       return n.map((node) => {
         const prev = prevById.get(node.id);
         const position = positionFor(node.id);
-        const data = { ...node.data, diameter: diameters[node.id], width: widths[node.id] };
+        const data = { ...node.data, diameter: diameters[node.id], width: widths[node.id], neurons: neurons[node.id], expanded };
         // Expansion sub-nodes don't exist in the store, so they're inert: React
         // Flow may place them but never drag/select/connect/delete them.
         const flags = data.synthetic
@@ -145,18 +171,44 @@ export default function App() {
           : { ...node, data, position, ...flags };
       });
     });
+    // In the expanded view, an edge between two neuron columns (input/linear/
+    // activation, non-synthetic) is drawn as the fully-connected bundle of a classic
+    // deep-net diagram instead of a single line (see NeuronBundleEdge).
+    const neuronIds = expanded
+      ? new Set(
+          n
+            .filter((node) => !node.data.synthetic && NEURON_CATEGORIES.has(node.data.category))
+            .map((node) => node.id),
+        )
+      : new Set();
     setEdges(
-      e.map((edge) => ({
-        ...edge,
-        type: "deletable",
-        // Synthetic (expansion) edges aren't store edges, so they can't be deleted;
-        // a `null` onDelete hides the hover ✕ (see DeletableEdge).
-        data: {
-          onDelete: edge.source.includes("/") || edge.target.includes("/")
-            ? null
-            : () => send(proto.disconnectLayers(edge.source, edge.target)),
-        },
-      })),
+      e.map((edge) => {
+        if (neuronIds.has(edge.source) && neuronIds.has(edge.target)) {
+          return {
+            ...edge,
+            type: "neuronBundle",
+            data: {
+              sourceCount: neurons[edge.source] ?? 3,
+              targetCount: neurons[edge.target] ?? 3,
+              // A column whose real width exceeds its drawn circles shows a ⋮ in the
+              // middle slot; the bundle must skip that slot too (see NeuronBundleEdge).
+              sourceTruncated: (widths[edge.source] ?? 0) > (neurons[edge.source] ?? 3),
+              targetTruncated: (widths[edge.target] ?? 0) > (neurons[edge.target] ?? 3),
+            },
+          };
+        }
+        return {
+          ...edge,
+          type: "deletable",
+          // Synthetic (expansion) edges aren't store edges, so they can't be deleted;
+          // a `null` onDelete hides the hover ✕ (see DeletableEdge).
+          data: {
+            onDelete: edge.source.includes("/") || edge.target.includes("/")
+              ? null
+              : () => send(proto.disconnectLayers(edge.source, edge.target)),
+          },
+        };
+      }),
     );
   }, [arch, expanded, setNodes, setEdges, send]);
 
@@ -171,7 +223,7 @@ export default function App() {
     if (!grew) return;
     if (rfRef.current) {
       requestAnimationFrame(() =>
-        rfRef.current?.fitView({ padding: 0.25, maxZoom: 0.85, duration: 300 }),
+        rfRef.current?.fitView({ padding: 0.25, maxZoom: FIT_MAX_ZOOM, duration: 300 }),
       );
     }
   }, [arch]);
@@ -180,7 +232,7 @@ export default function App() {
   useEffect(() => {
     if (rfRef.current) {
       requestAnimationFrame(() =>
-        rfRef.current?.fitView({ padding: 0.2, maxZoom: 0.85, duration: 300 }),
+        rfRef.current?.fitView({ padding: 0.2, maxZoom: FIT_MAX_ZOOM, duration: 300 }),
       );
     }
   }, [expanded]);
@@ -190,11 +242,12 @@ export default function App() {
     [nodes, selectedId],
   );
 
-  // Whether anything in the current graph actually has an expansion (a plain
-  // 1-layer RNN doesn't), so the button can disable itself when there's nothing
-  // to show.
+  // Whether Expand would actually change the view: a composite block that unfolds
+  // into a subgraph (isExpandable), OR a linear layer, which expands into its neuron
+  // box. A plain 1-layer RNN with no linears has nothing to show, so the button
+  // disables itself.
   const hasExpandable = useMemo(
-    () => (arch?.nodes ?? []).some(isExpandable),
+    () => (arch?.nodes ?? []).some((n) => isExpandable(n) || n.type === "linear"),
     [arch],
   );
 
@@ -238,13 +291,17 @@ export default function App() {
     dragOverridesRef.current.set(node.id, snapToCell(node.position));
   }, []);
 
-  // Dropping a palette item just adds the layer; the edge-driven layout places
-  // it (in column 0 until it's wired, then it flows to the right of its source).
+  // Dropping a palette item adds the layer and remembers where it was dropped, so
+  // the new node lands in that column instead of the default column 0 (which the
+  // edge-driven layout would otherwise use until it's wired).
   const onDrop = useCallback(
     (event) => {
       event.preventDefault();
       const type = event.dataTransfer.getData("application/nn-layer-type");
-      if (type) add(type);
+      if (!type) return;
+      const flowPos = rfRef.current?.screenToFlowPosition?.({ x: event.clientX, y: event.clientY });
+      pendingDropRef.current = flowPos ? snapToCell(flowPos) : null;
+      add(type);
     },
     [add],
   );
@@ -302,7 +359,7 @@ export default function App() {
               setSelectedId(null);
             }}
             disabled={!hasExpandable && !expanded}
-            title="Expand composite layers (transformers, attention, stacked RNNs) into their internal sub-layers"
+            title="Expand: unfold composite blocks (transformers, attention, stacked RNNs) into their sub-layers, and show linear layers as their neurons"
           >
             {expanded ? "Collapse" : "Expand"}
           </button>
@@ -338,7 +395,7 @@ export default function App() {
           snapToGrid
           snapGrid={GRID}
           fitView
-          fitViewOptions={{ padding: 0.25, maxZoom: 0.85 }}
+          fitViewOptions={{ padding: 0.25, maxZoom: FIT_MAX_ZOOM }}
           minZoom={0.2}
         >
           <Background />
