@@ -4,11 +4,12 @@
 // sends are accepted/rejected exactly as intended, over the real network
 // transport, against the single ArchitectureStore.
 //
-// Requires the project venv python and a free :8765. If python is missing the
-// whole suite skips (so it can't be falsely red on a machine without the venv).
+// Requires a python (env PYTHON, default python3) with the backend deps
+// installed, and a free :8765. If the backend can't run the whole suite skips
+// (so it can't be falsely red on a machine without the deps).
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
-import { spawn } from "node:child_process";
+import { spawn, execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -18,10 +19,20 @@ import * as proto from "../../src/protocol.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "../../..");
-const PYTHON = "/home/hunain/base/bin/python";
+// CI sets PYTHON=python3; local devs point it at their venv interpreter.
+const PYTHON = process.env.PYTHON || "python3";
 const URL = "ws://localhost:8765/ws";
 
-const haveBackend = existsSync(PYTHON) && existsSync(path.join(repoRoot, "backend", "main.py"));
+function backendRunnable() {
+  try {
+    execFileSync(PYTHON, ["-c", "import fastapi, uvicorn, mcp"], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const haveBackend = existsSync(path.join(repoRoot, "backend", "main.py")) && backendRunnable();
 const suite = haveBackend ? describe : describe.skip;
 
 // --- a tiny promise-based ws client -------------------------------------------

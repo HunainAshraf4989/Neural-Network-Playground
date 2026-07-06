@@ -1,8 +1,9 @@
-"""Layer catalog: schema + structural validation ONLY.
+"""Layer catalog: schema + structural/value validation ONLY.
 
 This module is the single place that knows which layer types exist and what
-params they take. It performs *structural* validation only (unknown type,
-missing required param, unknown param) — never tensor-shape math. Shape
+params they take. It performs *structural* validation (unknown type, missing
+required param, unknown param) plus per-param *value* checks (right type,
+sane bounds — see ``_VALUE_SPECS``) — never tensor-shape math. Shape
 correctness is determined exclusively by real execution in ``validator.py``.
 
 Each catalog entry carries:
@@ -91,6 +92,104 @@ CATALOG = {
 MERGE_TYPES = {"add", "concat"}
 
 
+# --- per-param value specs -----------------------------------------------------
+#
+# Structural checking above answers "which params exist"; this table answers
+# "what values does each accept". It is deliberately a flat name->spec table with
+# one checker, not a validation framework: its job is to keep params *honest
+# scalars* — a string "100000" or a 10**12 int must not slip past the validator's
+# pre-flight param estimate (whose arithmetic silently returns 0 on a TypeError)
+# — never to do tensor-shape math (invariant 4: shapes are decided only by real
+# execution in validator.py). Param names are consistent across layer types, so
+# one entry per name covers every type that uses it.
+#
+# Spec kinds: ("int", lo, hi) · ("int_or_none", lo, hi) · ("int_or_ints", lo, hi)
+# int or list/tuple of 1-4 such ints · ("shape",) list of 1-4 ints ·
+# ("float", lo, hi) · ("bool",) · ("enum", (values...,))
+
+_INT_MAX = 1_000_000_000
+
+_VALUE_SPECS = {
+    "shape": ("shape",),
+    "dtype": ("enum", ("float32", "int64")),
+    "mode": ("enum", ("nearest", "bilinear", "bicubic")),
+    # positive integer sizes/counts
+    "in_channels": ("int", 1, _INT_MAX), "out_channels": ("int", 1, _INT_MAX),
+    "num_features": ("int", 1, _INT_MAX), "num_groups": ("int", 1, _INT_MAX),
+    "num_channels": ("int", 1, _INT_MAX), "in_features": ("int", 1, _INT_MAX),
+    "out_features": ("int", 1, _INT_MAX), "num_embeddings": ("int", 1, _INT_MAX),
+    "embedding_dim": ("int", 1, _INT_MAX), "input_size": ("int", 1, _INT_MAX),
+    "hidden_size": ("int", 1, _INT_MAX), "d_model": ("int", 1, _INT_MAX),
+    "nhead": ("int", 1, _INT_MAX), "embed_dim": ("int", 1, _INT_MAX),
+    "num_heads": ("int", 1, _INT_MAX), "dim_feedforward": ("int", 1, _INT_MAX),
+    "max_len": ("int", 1, _INT_MAX), "num_layers": ("int", 1, 64),
+    "dilation": ("int", 1, _INT_MAX),
+    "padding": ("int", 0, _INT_MAX), "output_padding": ("int", 0, _INT_MAX),
+    # int-or-tuple geometry params
+    "kernel_size": ("int_or_ints", 1, _INT_MAX),
+    "output_size": ("int_or_ints", 1, _INT_MAX),
+    "normalized_shape": ("int_or_ints", 1, _INT_MAX),
+    # stride=None means "default to kernel_size" for the pool layers
+    "stride": ("int_or_none", 1, _INT_MAX),
+    # small signed ints (dim indices)
+    "dim": ("int", -8, 8), "start_dim": ("int", -8, 8),
+    # probabilities and other floats
+    "p": ("float", 0.0, 1.0), "dropout": ("float", 0.0, 1.0),
+    "negative_slope": ("float", -1e6, 1e6), "alpha": ("float", -1e6, 1e6),
+    "scale_factor": ("float", 1e-6, 1e6),
+    "bidirectional": ("bool",),
+}
+
+
+def _is_int(value):
+    # bool is an int subclass; True/False must not pass as 1/0
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _check_value(layer_type, name, value):
+    """Raise ValueError if ``value`` is out of spec for param ``name``. Error
+    style matches the structural errors above: one actionable sentence naming
+    the layer, the param, what was expected, and what arrived."""
+    spec = _VALUE_SPECS[name]
+    kind = spec[0]
+
+    def fail(expected):
+        raise ValueError(
+            f"layer '{layer_type}' param '{name}': expected {expected}, got {value!r}")
+
+    if kind == "int":
+        lo, hi = spec[1], spec[2]
+        if not _is_int(value) or not lo <= value <= hi:
+            fail(f"an integer in [{lo}, {hi}]")
+    elif kind == "int_or_none":
+        lo, hi = spec[1], spec[2]
+        if value is not None and (not _is_int(value) or not lo <= value <= hi):
+            fail(f"an integer in [{lo}, {hi}] or null")
+    elif kind == "int_or_ints":
+        lo, hi = spec[1], spec[2]
+        ok = (_is_int(value) and lo <= value <= hi) or (
+            isinstance(value, (list, tuple)) and 1 <= len(value) <= 4
+            and all(_is_int(v) and lo <= v <= hi for v in value))
+        if not ok:
+            fail(f"an integer in [{lo}, {hi}] or a list of 1-4 such integers")
+    elif kind == "shape":
+        ok = (isinstance(value, (list, tuple)) and 1 <= len(value) <= 4
+              and all(_is_int(v) and 1 <= v <= _INT_MAX for v in value))
+        if not ok:
+            fail("a list of 1-4 positive integers (per-sample shape, no batch dim)")
+    elif kind == "float":
+        lo, hi = spec[1], spec[2]
+        if isinstance(value, bool) or not isinstance(value, (int, float)) \
+                or not lo <= value <= hi:
+            fail(f"a number in [{lo}, {hi}]")
+    elif kind == "bool":
+        if not isinstance(value, bool):
+            fail("true or false")
+    elif kind == "enum":
+        if value not in spec[1]:
+            fail("one of " + ", ".join(repr(v) for v in spec[1]))
+
+
 def describe_catalog():
     """Return a JSON-serialisable view of the whole catalog: ``{type: {category,
     required: [...], optional: {name: default}}}``. This is what the agent-facing
@@ -137,4 +236,7 @@ def validate_and_merge(layer_type, params):
         raise ValueError(
             f"layer '{layer_type}' got unknown param(s): {unknown}; "
             f"allowed: {sorted(known)}")
+
+    for name, value in merged.items():
+        _check_value(layer_type, name, value)
     return merged

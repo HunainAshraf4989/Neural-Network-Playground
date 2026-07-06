@@ -12,7 +12,17 @@ import { CATALOG, CATEGORY_COLORS } from "./catalog.js";
 // catalog.js matches, so palette drags can't start failing in production.
 const here = path.dirname(fileURLToPath(import.meta.url));
 const backendDir = path.resolve(here, "../../backend");
-const PYTHON = "/home/hunain/base/bin/python";
+// CI sets PYTHON=python3; local devs point it at their venv interpreter.
+const PYTHON = process.env.PYTHON || "python3";
+
+function pythonWorks() {
+  try {
+    execFileSync(PYTHON, ["--version"], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 function loadBackendCatalog() {
   const code = [
@@ -25,7 +35,7 @@ function loadBackendCatalog() {
   return JSON.parse(stdout.toString());
 }
 
-const backendAvailable = existsSync(PYTHON) && existsSync(path.join(backendDir, "layers.py"));
+const backendAvailable = existsSync(path.join(backendDir, "layers.py")) && pythonWorks();
 const maybe = backendAvailable ? describe : describe.skip;
 
 maybe("catalog parity with backend/layers.py", () => {
