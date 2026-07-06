@@ -1,21 +1,23 @@
 """Architecture validation by REAL execution in an isolated subprocess.
 
 This is the only place shape-correctness is decided. It generates code, writes
-it to a fixed temp path, then runs ``runner_template.py`` against it under a
-10s timeout. Errors come back as structured ``LayerExecutionError`` fields
-(node_id/layer_type/message), never parsed out of a generic traceback.
+it to a per-invocation temp file (deleted when the run ends — concurrent
+validations never share a path), then runs ``runner_template.py`` against it
+under a timeout (``NN_VALIDATION_TIMEOUT_S``, default 10 s). Errors come back
+as structured ``LayerExecutionError`` fields (node_id/layer_type/message),
+never parsed from a generic traceback.
 """
 
 import json
 import os
 import subprocess
 import sys
+import tempfile
 
 import codegen
 
-GENERATED_PATH = "/tmp/_nn_architect_generated.py"
 RUNNER_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "runner_template.py")
-TIMEOUT_SECONDS = 10
+TIMEOUT_SECONDS = float(os.environ.get("NN_VALIDATION_TIMEOUT_S", "10"))
 # Pre-flight resource guard: a graph estimated above this many trainable params is
 # rejected *before* we spawn torch, so a pathological model (e.g. a linear layer
 # with 100k in/out = 10B params) gets a clean message instead of thrashing the
@@ -116,8 +118,11 @@ def validate(state):
         }
 
     code, terminals, warnings = codegen.generate(state)
-    with open(GENERATED_PATH, "w") as f:
+    with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".py", prefix="nn_architect_generated_",
+            delete=False) as f:
         f.write(code)
+        generated_path = f.name
 
     spec = json.dumps({
         "shape": input_node["params"]["shape"],
@@ -127,13 +132,18 @@ def validate(state):
 
     try:
         proc = subprocess.run(
-            [sys.executable, RUNNER_PATH, GENERATED_PATH, spec],
+            [sys.executable, RUNNER_PATH, generated_path, spec],
             capture_output=True, text=True, timeout=TIMEOUT_SECONDS,
         )
     except subprocess.TimeoutExpired:
         return {"valid": False,
                 "error": {"message": f"validation timed out after {TIMEOUT_SECONDS}s"},
                 "warnings": warnings}
+    finally:
+        try:
+            os.unlink(generated_path)
+        except OSError:
+            pass
 
     line = proc.stdout.strip().splitlines()[-1] if proc.stdout.strip() else ""
     if not line:

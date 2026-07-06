@@ -42,27 +42,28 @@ from pathlib import Path
 
 import uvicorn
 
+from config import load as load_config
 from mcp_tools import build_mcp
 from store import ArchitectureStore
 from ws_app import build_app
 
 log = logging.getLogger("nn_architect.main")
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent
+CONFIG = load_config()
 WS_HOST = "0.0.0.0"
-WS_PORT = int(os.environ.get("WS_PORT", "8765"))
+WS_PORT = CONFIG.ws_port
 
 
 def _configure_logging() -> None:
     """Send all logs to stderr and to a rotating file; never to stdout."""
-    level = os.environ.get("LOG_LEVEL", "INFO")
+    level = CONFIG.log_level
     fmt = logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s")
 
     stderr_handler = logging.StreamHandler(sys.stderr)
     stderr_handler.setFormatter(fmt)
     handlers = [stderr_handler]
 
-    log_file = os.environ.get("LOG_FILE", str(_REPO_ROOT / "logs" / "nn_architect.log"))
+    log_file = CONFIG.log_file
     if log_file:
         Path(log_file).parent.mkdir(parents=True, exist_ok=True)
         file_handler = logging.handlers.RotatingFileHandler(
@@ -259,7 +260,7 @@ async def _run_standalone(store) -> None:
 
 def main() -> None:
     _configure_logging()
-    mode = os.environ.get("MODE", "").lower()
+    mode = CONFIG.mode
     store = ArchitectureStore()
 
     if mode == "standalone":
