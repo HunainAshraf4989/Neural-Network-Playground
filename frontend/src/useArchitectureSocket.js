@@ -3,36 +3,78 @@
 // messages. The backend is the single source of truth, so this hook never
 // mutates `arch` optimistically — it only renders what the server broadcasts
 // back. `ack`/`error` replies are surfaced as a transient status line.
+//
+// Connection lifecycle (deploy S1): reconnects with exponential backoff +
+// jitter (1.5 s base, 15 s cap — a fixed short loop would hammer a free-tier
+// backend that takes ~30 s to cold-start). While disconnected, `status` says
+// *why* the canvas is empty: "connecting" (backend reachable, ws not up yet)
+// vs "waking" (the `/healthz` probe also fails — a sleeping HF Space being
+// woken, or no backend at all).
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import * as proto from "./protocol.js";
 
-// Backend websocket URL. Defaults to the local backend; override with the
-// VITE_WS_URL env var (e.g. to point the dev UI at a backend on another port).
-const DEFAULT_URL = import.meta.env?.VITE_WS_URL || "ws://localhost:8765/ws";
-const RECONNECT_MS = 1500;
+// Single backend base URL (http(s)://host[:port]); ws and healthz URLs are
+// derived from it, so prod config is one env var: VITE_BACKEND_URL.
+const BACKEND_URL = import.meta.env?.VITE_BACKEND_URL || "http://localhost:8765";
+const RECONNECT_BASE_MS = 1500;
+const RECONNECT_CAP_MS = 15000;
 
-export function useArchitectureSocket(url = DEFAULT_URL) {
+export function wsUrl(backendUrl) {
+  return backendUrl.replace(/^http/, "ws").replace(/\/+$/, "") + "/ws";
+}
+
+export function healthzUrl(backendUrl) {
+  return backendUrl.replace(/\/+$/, "") + "/healthz";
+}
+
+// Full backoff with jitter: cap the exponential curve, then randomize within
+// [half, full] so a fleet of tabs doesn't reconnect in lockstep.
+export function reconnectDelay(attempt, random = Math.random()) {
+  const capped = Math.min(RECONNECT_CAP_MS, RECONNECT_BASE_MS * 2 ** attempt);
+  return capped / 2 + random * (capped / 2);
+}
+
+export function useArchitectureSocket(backendUrl = BACKEND_URL) {
   const [arch, setArch] = useState({ nodes: [], edges: [], layout: {} });
-  const [connected, setConnected] = useState(false);
+  const [status, setStatus] = useState("connecting"); // connected|connecting|waking
   const [notice, setNotice] = useState(null); // {kind:"error"|"ack", message}
   const wsRef = useRef(null);
   const closedRef = useRef(false);
+  const attemptRef = useRef(0);
   const pendingCodeRef = useRef(null); // resolver for an in-flight requestCode()
 
   useEffect(() => {
     closedRef.current = false;
     let reconnectTimer = null;
 
+    // The ws just failed — ask /healthz whether anyone is home. Reachable
+    // backend => plain "connecting"; unreachable => "waking" (sleeping Space
+    // spinning up, or nothing there — either way: wait, don't panic).
+    async function probeHealth() {
+      try {
+        const res = await fetch(healthzUrl(backendUrl), { cache: "no-store" });
+        if (!closedRef.current) setStatus(res.ok ? "connecting" : "waking");
+      } catch {
+        if (!closedRef.current) setStatus("waking");
+      }
+    }
+
     function connect() {
-      const ws = new WebSocket(url);
+      const ws = new WebSocket(wsUrl(backendUrl));
       wsRef.current = ws;
 
-      ws.onopen = () => setConnected(true);
+      ws.onopen = () => {
+        attemptRef.current = 0;
+        setStatus("connected");
+      };
       ws.onclose = () => {
-        setConnected(false);
-        if (!closedRef.current) reconnectTimer = setTimeout(connect, RECONNECT_MS);
+        if (closedRef.current) return;
+        setStatus("connecting");
+        probeHealth();
+        reconnectTimer = setTimeout(connect, reconnectDelay(attemptRef.current));
+        attemptRef.current += 1;
       };
       ws.onmessage = (ev) => {
         let msg;
@@ -61,7 +103,7 @@ export function useArchitectureSocket(url = DEFAULT_URL) {
       if (reconnectTimer) clearTimeout(reconnectTimer);
       wsRef.current?.close();
     };
-  }, [url]);
+  }, [backendUrl]);
 
   const send = useCallback((message) => {
     const ws = wsRef.current;
@@ -86,5 +128,13 @@ export function useArchitectureSocket(url = DEFAULT_URL) {
     });
   }, []);
 
-  return { arch, connected, notice, send, requestCode, clearNotice: () => setNotice(null) };
+  return {
+    arch,
+    status,
+    connected: status === "connected",
+    notice,
+    send,
+    requestCode,
+    clearNotice: () => setNotice(null),
+  };
 }

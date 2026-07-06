@@ -64,7 +64,7 @@ const GRID = [COL_GAP, ROW_GAP];
 const FIT_MAX_ZOOM = 1.4;
 
 export default function App() {
-  const { arch, connected, notice, send, requestCode } = useArchitectureSocket();
+  const { arch, connected, status, notice, send, requestCode } = useArchitectureSocket();
   const [nodes, setNodes, rawOnNodesChange] = useNodesState([]);
   const [edges, setEdges, rawOnEdgesChange] = useEdgesState([]);
   const [selectedId, setSelectedId] = useState(null);
@@ -348,8 +348,18 @@ export default function App() {
 
       <div className="canvas" onDrop={onDrop} onDragOver={onDragOver}>
         <div className="toolbar">
+          {/* Connection banner: "waking" = the /healthz probe fails too, so the
+              backend is a sleeping free-tier Space spinning up (~30 s) — tell
+              the user to wait, not to debug. `status` may be undefined when the
+              hook is mocked; fall back to the plain connected/disconnected pair. */}
           <span className={`status status--${connected ? "ok" : "down"}`}>
-            {connected ? "connected" : "disconnected"}
+            {connected
+              ? "connected"
+              : status === "waking"
+                ? "backend waking (~30 s)…"
+                : status === "connecting"
+                  ? "connecting…"
+                  : "disconnected"}
           </span>
           <button
             type="button"
@@ -414,6 +424,15 @@ export default function App() {
                 <p>
                   Drag a layer from the palette, or ask your agent to build a
                   network — it appears here as it's created.
+                </p>
+              </>
+            ) : status === "waking" ? (
+              <>
+                <div className="canvas__empty-title">Waking the backend…</div>
+                <p>
+                  The backend sleeps when idle and takes ~30 seconds to start.
+                  The canvas connects automatically once it's up — no need to
+                  reload.
                 </p>
               </>
             ) : (

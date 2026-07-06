@@ -25,6 +25,9 @@ import json
 import logging
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+
+from config import load as load_config
 
 log = logging.getLogger("nn_architect.ws")
 
@@ -106,14 +109,37 @@ async def _apply(store, msg: dict):
     return await getattr(store, method_name)(*args)
 
 
-def build_app(store):
+def build_app(store, cors_origins=None):
     """Build the FastAPI app and return ``(app, broadcast)``.
 
     ``broadcast`` is the manager's coroutine; ``main.py`` passes it to
     ``build_mcp`` so both surfaces share one broadcast path.
+
+    ``cors_origins``: explicit allowlist for tests; ``None`` reads
+    ``CORS_ORIGINS`` via config. Deployed, the browser fetches ``/healthz``
+    cross-origin (Vercel frontend → HF Space backend) to tell a *waking* Space
+    from a dead one, so those responses must carry CORS headers. No origins
+    configured = no middleware (local behavior unchanged).
     """
     manager = ConnectionManager(store)
     app = FastAPI(title="nn-architect")
+
+    if cors_origins is None:
+        cors_origins = load_config().cors_origins
+    if cors_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=list(cors_origins),
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+
+    @app.get("/healthz")
+    async def healthz() -> dict:
+        # Liveness for the frontend's "waking" probe, the deploy smoke check,
+        # and the external keepalive pinger. Deliberately trivial: no store
+        # access, no auth — reachable means the process is up.
+        return {"status": "ok"}
 
     @app.websocket("/ws")
     async def ws_endpoint(ws: WebSocket) -> None:

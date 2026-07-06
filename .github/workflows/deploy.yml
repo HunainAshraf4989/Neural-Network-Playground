@@ -1,0 +1,54 @@
+name: Deploy backend to HF Space
+
+# Pushes the repo to the Hugging Face Space git remote on every main push; the
+# Space rebuilds from the root Dockerfile. Vercel deploys the frontend on its
+# own GitHub integration — nothing to do here.
+#
+# One-time setup (skipped cleanly until done):
+#   - repo variable HF_SPACE_ID  = <owner>/<space>  (a Docker Space)
+#   - repo secret   HF_TOKEN     = HF access token with write scope
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    if: vars.HF_SPACE_ID != ''
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # HF Spaces read their config (sdk: docker, app_port) from YAML
+      # front-matter on README.md. Keep the GitHub README clean by prepending
+      # it in a deploy-only commit that never lands on main.
+      - name: Prepend HF Space front-matter to README
+        run: |
+          { cat <<'EOF'
+          ---
+          title: nn-architect backend
+          emoji: 🧠
+          colorFrom: indigo
+          colorTo: purple
+          sdk: docker
+          app_port: 7860
+          ---
+          EOF
+            cat README.md
+          } > README.space.md
+          mv README.space.md README.md
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          git commit -m "deploy: add HF Space front-matter"
+
+      - name: Push to the Space
+        run: |
+          OWNER="${HF_SPACE_ID%%/*}"
+          git push --force "https://${OWNER}:${HF_TOKEN}@huggingface.co/spaces/${HF_SPACE_ID}" HEAD:main
+        env:
+          HF_SPACE_ID: ${{ vars.HF_SPACE_ID }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}

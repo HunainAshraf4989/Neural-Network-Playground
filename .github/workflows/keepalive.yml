@@ -1,0 +1,23 @@
+name: Keepalive
+
+# Daily /healthz ping so the free HF Space doesn't go 48h-idle → sleep quite so
+# often. NOT sufficient on its own: GitHub disables scheduled workflows after
+# 60 days of repo inactivity, so an external pinger (UptimeRobot/cron-job.org)
+# is the primary keepalive — this is belt-and-braces (see DEPLOYMENT_PLAN).
+#
+# Setup: repo variable BACKEND_URL = https://<owner>-<space>.hf.space
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    if: vars.BACKEND_URL != ''
+    steps:
+      - name: Ping /healthz
+        run: curl -fsS --max-time 120 --retry 3 --retry-delay 20 "${BACKEND_URL%/}/healthz"
+        env:
+          BACKEND_URL: ${{ vars.BACKEND_URL }}
