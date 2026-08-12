@@ -75,16 +75,19 @@ A few architectures built on the canvas (these are the tool's own PNG exports):
 
 <br/>
 
-<table>
-<tr>
-<td width="50%" align="center"><img src="assets/residual.png" alt="A residual block with a skip connection into an add" width="430"></td>
-<td width="50%" align="center"><img src="assets/transformer.png" alt="A transformer encoder, a stack of self-attention layers" width="430"></td>
-</tr>
-<tr>
-<td align="center"><sub>A residual block: a skip connection into an <code>add</code>.</sub></td>
-<td align="center"><sub>A transformer encoder: a stack of self-attention layers.</sub></td>
-</tr>
-</table>
+<div align="center">
+  <img src="assets/residual.png" alt="A residual block with a skip connection arcing over two conv-norm pairs into an add" width="900">
+  <br/>
+  <sub>A residual block: the skip connection arcs over both conv/norm pairs into an <code>add</code>.</sub>
+</div>
+
+<br/>
+
+<div align="center">
+  <img src="assets/transformer.png" alt="An encoder-only transformer: embedding, positional encoding, four encoder layers, norm and a classifier head" width="900">
+  <br/>
+  <sub>An encoder-only transformer: embedding → positional encoding → four encoder layers → norm → head.</sub>
+</div>
 
 ---
 
