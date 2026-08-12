@@ -12,8 +12,8 @@ import { CATALOG, CATEGORY_COLORS } from "./catalog.js";
 // catalog.js matches, so palette drags can't start failing in production.
 const here = path.dirname(fileURLToPath(import.meta.url));
 const backendDir = path.resolve(here, "../../backend");
-// CI sets PYTHON=python3; local devs point it at their venv interpreter.
-const PYTHON = process.env.PYTHON || "python3";
+// The project venv (see CLAUDE.md); override with PYTHON on another machine.
+const PYTHON = process.env.PYTHON || "/home/hunain/base/bin/python";
 
 function pythonWorks() {
   try {

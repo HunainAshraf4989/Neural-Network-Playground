@@ -1,4 +1,4 @@
-"""validator.py process hygiene (deploy S0): per-invocation temp files and the
+"""validator.py process hygiene: per-invocation temp files and the
 NN_VALIDATION_TIMEOUT_S override. The runner subprocess is faked here — real
 execution (and hence shape correctness) is covered by the validate tests in
 test_store.py; this file only cares that concurrent validations never share a

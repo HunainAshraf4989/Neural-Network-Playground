@@ -4,9 +4,9 @@
 // sends are accepted/rejected exactly as intended, over the real network
 // transport, against the single ArchitectureStore.
 //
-// Requires a python (env PYTHON, default python3) with the backend deps
-// installed, and a free :8765. If the backend can't run the whole suite skips
-// (so it can't be falsely red on a machine without the deps).
+// Requires a python (env PYTHON, default the project venv) with the backend
+// deps installed, and a free :8765. If the backend can't run the whole suite
+// skips (so it can't be falsely red on a machine without the deps).
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import { spawn, execFileSync } from "node:child_process";
@@ -19,8 +19,8 @@ import * as proto from "../../src/protocol.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "../../..");
-// CI sets PYTHON=python3; local devs point it at their venv interpreter.
-const PYTHON = process.env.PYTHON || "python3";
+// The project venv (see CLAUDE.md); override with PYTHON on another machine.
+const PYTHON = process.env.PYTHON || "/home/hunain/base/bin/python";
 const URL = "ws://localhost:8765/ws";
 
 function backendRunnable() {

@@ -29,6 +29,5 @@ frontend/dist/
 # Internal implementation/planning docs — kept locally, not part of the public repo
 /CLAUDE.md
 /Tentative plan.md
-/DEPLOYMENT_PLAN.md
 /.claude/handoff/
 /.claude/worktrees/

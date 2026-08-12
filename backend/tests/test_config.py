@@ -1,4 +1,4 @@
-"""backend/config.py (deploy S0): the one place env is parsed, read once."""
+"""backend/config.py: the one place env is parsed, read once."""
 
 import dataclasses
 
@@ -7,35 +7,39 @@ import pytest
 import config
 
 
-def test_defaults_match_pre_s0_behavior():
+def test_defaults():
     c = config.load({})
     assert c.mode == ""
     assert c.ws_port == 8765
     assert c.log_level == "INFO"
-    assert c.log_file.endswith("nn_architect.log")  # repo logs dir, as before
+    assert c.log_file.endswith("nn_architect.log")  # repo logs dir
     assert c.validation_max_params == 500_000_000
     assert c.validation_mem_mb == 4096
     assert c.validation_timeout_s == 10.0
-    assert c.cors_origins == ()
 
 
-def test_server_mode_defaults_log_file_off_and_honors_port():
-    c = config.load({"MODE": "server", "PORT": "7860"})
-    assert c.mode == "server"
-    assert c.ws_port == 7860  # HF Spaces-style PORT
-    assert c.log_file == ""   # non-root container: stderr only unless LOG_FILE set
+def test_standalone_mode_is_lowercased():
+    c = config.load({"MODE": "Standalone"})
+    assert c.mode == "standalone"
 
 
-def test_ws_port_wins_over_port_and_explicit_log_file_sticks():
-    c = config.load({"MODE": "server", "WS_PORT": "9001", "PORT": "7860",
-                     "LOG_FILE": "/tmp/x.log"})
+def test_ws_port_and_explicit_log_file_override():
+    c = config.load({"WS_PORT": "9001", "LOG_FILE": "/tmp/x.log"})
     assert c.ws_port == 9001
     assert c.log_file == "/tmp/x.log"
 
 
-def test_cors_origins_parsed_from_csv():
-    c = config.load({"CORS_ORIGINS": "https://a.app, https://b.app ,"})
-    assert c.cors_origins == ("https://a.app", "https://b.app")
+def test_empty_log_file_disables_file_logging():
+    c = config.load({"LOG_FILE": ""})
+    assert c.log_file == ""
+
+
+def test_validation_guards_are_env_tunable():
+    c = config.load({"NN_VALIDATION_MAX_PARAMS": "1000", "NN_VALIDATION_MEM_MB": "512",
+                     "NN_VALIDATION_TIMEOUT_S": "2.5"})
+    assert c.validation_max_params == 1000
+    assert c.validation_mem_mb == 512
+    assert c.validation_timeout_s == 2.5
 
 
 def test_config_is_frozen():

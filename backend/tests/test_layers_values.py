@@ -1,4 +1,4 @@
-"""Per-param VALUE validation in layers.validate_and_merge (deploy S0).
+"""Per-param VALUE validation in layers.validate_and_merge.
 
 Structural checks (unknown type/param, missing required) are covered by the
 store tests; these cover the value layer: wrong types (the "100000"-as-string
