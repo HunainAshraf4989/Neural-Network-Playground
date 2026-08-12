@@ -53,13 +53,9 @@ code, not by reading it.
 
 ## Demo
 
-> ▶️ &nbsp;**An animated walkthrough is coming soon.** Until then, here is the loop as stills.
 > Ask for *"a small CNN for 28×28 grayscale digits,"* and the layers land on the canvas as
 > the tool calls go out. Drag a node, change `out_channels`, delete an edge, and the AI
 > picks it up on its next `get_architecture`. Either side can hand control back to the other.
-
-<!-- TODO: replace the image below with the recording once ready:
-     ![An AI builds a CNN over MCP while a human watches the canvas](assets/live-build.gif) -->
 
 <div align="center">
   <img src="assets/params-edit.png" alt="A human editing a layer's params on the canvas while the AI watches" width="820">
