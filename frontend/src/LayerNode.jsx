@@ -104,6 +104,33 @@ function NeuronColumn({ count, truncated }) {
   );
 }
 
+// Display-only short names. A glyph's SIZE encodes feature width (dims.js), so a
+// layer whose width is the graph's minimum renders at MIN_DIAMETER — about 71x50px
+// for a block. The raw schema type `transformer_encoder_layer` cannot fit there at a
+// readable size: its longest word alone overflows the shell, so the CSS last-resort
+// break splits it mid-letter and the extra lines spill outside the border. These are
+// the names a real architecture diagram would use anyway; the exact type is still in
+// the hover tooltip, the params panel, and the generated code. Same idea as the
+// friendlier `data.label` carried by expansion sub-nodes.
+const DISPLAY_NAMES = {
+  transformer_encoder_layer: "encoder layer",
+  positional_encoding: "pos. encoding",
+  multihead_attention: "attention",
+  adaptive_avg_pool2d: "adaptive avgpool",
+  adaptive_max_pool2d: "adaptive maxpool",
+  conv_transpose2d: "conv transpose",
+  instancenorm2d: "instance norm",
+  groupnorm: "group norm",
+  batchnorm1d: "batch norm 1d",
+  batchnorm2d: "batch norm 2d",
+  layernorm: "layer norm",
+  leaky_relu: "leaky relu",
+};
+
+function displayName(label) {
+  return DISPLAY_NAMES[label] ?? label;
+}
+
 function blockSub(type) {
   if (type === "multihead_attention") return "MHA";
   if (type === "transformer_encoder_layer") return "MHA·FFN";
@@ -117,6 +144,7 @@ export default function LayerNode({ data, selected }) {
   // category IS the type's category, so this is unchanged.
   const color = colorOfCategory(data.category);
   const label = data.label ?? data.type; // sub-nodes carry a friendlier label
+  const shown = displayName(label); // shortened to fit the glyph; `title` keeps the real type
   const params = Object.entries(data.params ?? {}).slice(0, MAX_INLINE_PARAMS);
   const family = glyphFamily(data.category);
   // In the EXPANDED view, per-neuron layers (input / linear / activation) render as a
@@ -153,7 +181,7 @@ export default function LayerNode({ data, selected }) {
       {showNeurons ? (
         <>
           <NeuronColumn count={neuronCount} truncated={neuronsTruncated} />
-          <span className="nn-node__label">{labelWithBreaks(label)}</span>
+          <span className="nn-node__label">{labelWithBreaks(shown)}</span>
         </>
       ) : (
         <div className={`nn-glyph nn-glyph--${family}${selected ? " is-selected" : ""}`}>
@@ -164,7 +192,7 @@ export default function LayerNode({ data, selected }) {
           )}
           {family === "loop" && <span className="nn-glyph__loop" aria-hidden="true">↺</span>}
           {family === "merge" && <span className="nn-glyph__sign" aria-hidden="true">{mergeSign(data.type)}</span>}
-          <span className="nn-node__label">{labelWithBreaks(label)}</span>
+          <span className="nn-node__label">{labelWithBreaks(shown)}</span>
           {sub && <span className="nn-glyph__sub" aria-hidden="true">{sub}</span>}
         </div>
       )}

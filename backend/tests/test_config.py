@@ -14,7 +14,7 @@ def test_defaults():
     assert c.log_level == "INFO"
     assert c.log_file.endswith("nn_architect.log")  # repo logs dir
     assert c.validation_max_params == 500_000_000
-    assert c.validation_mem_mb == 4096
+    assert c.validation_mem_mb == 8192
     assert c.validation_timeout_s == 10.0
 
 

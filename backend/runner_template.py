@@ -26,7 +26,19 @@ def _cap_memory():
     swap-thrash or tripping the OS OOM killer — which may kill unrelated processes.
     The 10s timeout in ``validator.py`` guards against *hangs*; this guards against
     *memory*. The cap is on address space (RLIMIT_AS, so it also covers mmap'd
-    tensor allocations) and is tunable via ``NN_VALIDATION_MEM_MB`` (default 4096).
+    tensor allocations) and is tunable via ``NN_VALIDATION_MEM_MB``.
+
+    The default is 8192 MB, not a tighter-looking number, because RLIMIT_AS counts
+    *reserved address space*, not resident memory, and torch reserves a lot of it up
+    front: measured here, ``import torch`` alone takes ~3.4 GB of VA (one allocator
+    arena per thread) and a trivial 256-dim encoder forward reaches ~4.2 GB. A 4096
+    cap therefore sat BELOW torch's own floor and failed legitimate models with a
+    confusing allocator error before their size ever mattered. 8192 clears the floor
+    with headroom while still killing genuinely pathological graphs. The real defence
+    against absurd models is the param-count pre-flight in ``validator.py``
+    (``NN_VALIDATION_MAX_PARAMS``); this is the backstop for what that misses, mainly
+    big conv activation maps.
+
     ``resource`` is POSIX-only, so this is a no-op elsewhere; the subprocess
     isolation still stands either way.
     """
@@ -34,7 +46,7 @@ def _cap_memory():
         import resource
     except ImportError:
         return
-    target = int(os.environ.get("NN_VALIDATION_MEM_MB", "4096")) * 1024 * 1024
+    target = int(os.environ.get("NN_VALIDATION_MEM_MB", "8192")) * 1024 * 1024
     soft, hard = resource.getrlimit(resource.RLIMIT_AS)
     if hard != resource.RLIM_INFINITY:
         target = min(target, hard)  # can't raise the hard limit, only lower the soft

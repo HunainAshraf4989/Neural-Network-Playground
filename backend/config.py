@@ -42,6 +42,6 @@ def load(env=None) -> Config:
         log_level=env.get("LOG_LEVEL", "INFO"),
         log_file=env.get("LOG_FILE", _DEFAULT_LOG_FILE),
         validation_max_params=int(env.get("NN_VALIDATION_MAX_PARAMS", str(500_000_000))),
-        validation_mem_mb=int(env.get("NN_VALIDATION_MEM_MB", "4096")),
+        validation_mem_mb=int(env.get("NN_VALIDATION_MEM_MB", "8192")),
         validation_timeout_s=float(env.get("NN_VALIDATION_TIMEOUT_S", "10")),
     )
