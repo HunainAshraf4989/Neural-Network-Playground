@@ -1,11 +1,11 @@
 // Edge that reveals a delete control only on hover (or when selected), instead of
 // a permanently-visible button cluttering every connection. Hovering highlights
 // the path and fades in a small trash button at its midpoint; clicking it calls
-// `data.onDelete`, which App wires to a `disconnect_layers` message — the backend
+// `data.onDelete`, which App wires to a `disconnect_layers` message - the backend
 // stays the single source of truth. A wide transparent overlay path makes the
 // thin edge easy to hover/click.
 //
-// A connection that jumps more than one column (a residual / skip — the source and
+// A connection that jumps more than one column (a residual / skip - the source and
 // target aren't neighbors) is drawn as a DASHED ARC bowing above the spine, the way
 // ResNet/U-Net skips are conventionally drawn, so it reads as structure rather than
 // crossing straight through the layers between. Adjacent edges stay plain beziers.

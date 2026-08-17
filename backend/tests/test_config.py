@@ -1,6 +1,8 @@
 """backend/config.py: the one place env is parsed, read once."""
 
 import dataclasses
+import re
+from pathlib import Path
 
 import pytest
 
@@ -10,12 +12,22 @@ import config
 def test_defaults():
     c = config.load({})
     assert c.mode == ""
-    assert c.ws_port == 8765
+    assert c.ws_port == config.DEFAULT_WS_PORT
     assert c.log_level == "INFO"
     assert c.log_file.endswith("nn_architect.log")  # repo logs dir
     assert c.validation_max_params == 500_000_000
     assert c.validation_mem_mb == 8192
     assert c.validation_timeout_s == 10.0
+
+
+def test_default_ws_port_is_an_editable_plain_int():
+    """DEFAULT_WS_PORT is the documented "change this one number" knob, and
+    frontend/vite.config.js parses the literal out of this file with a regex,
+    so it has to stay a bare int on its own line, not a computed expression."""
+    assert isinstance(config.DEFAULT_WS_PORT, int)
+    source = (Path(config.__file__).read_text()).splitlines()
+    assert any(re.fullmatch(rf"DEFAULT_WS_PORT\s*=\s*{config.DEFAULT_WS_PORT}", ln)
+               for ln in source), "the frontend's regex will not find this port"
 
 
 def test_standalone_mode_is_lowercased():

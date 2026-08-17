@@ -8,7 +8,7 @@ subprocess and asserts the two properties only the real transport can prove:
    while the session is live *and* drained to EOF afterwards) is a JSON-RPC 2.0
    frame. The highest-stakes invariant in the project, otherwise unguarded. The
    dangerous corruption is a *flushed* raw write to fd 1 (e.g.
-   ``sys.stdout.write(...); flush()``) interleaving with frames — this test
+   ``sys.stdout.write(...); flush()``) interleaving with frames - this test
    catches that. (A plain block-buffered ``print`` is largely swallowed by the
    SDK's separate stdout wrapper and rarely reaches the client, but the EOF drain
    still audits anything flushed at exit.) The check deliberately includes
@@ -64,7 +64,7 @@ def test_stdout_is_pure_jsonrpc_and_logs_go_to_stderr():
          "params": {"name": "add_layer", "arguments": {"type": "flatten", "params": {}}}},
         {"jsonrpc": "2.0", "id": 5, "method": "tools/call",
          "params": {"name": "connect_layers", "arguments": {"from_id": "n1", "to_id": "n2"}}},
-        # spawns its own child subprocess internally — its output must not leak:
+        # spawns its own child subprocess internally - its output must not leak:
         {"jsonrpc": "2.0", "id": 6, "method": "tools/call",
          "params": {"name": "validate_architecture", "arguments": {}}},
         # an error-producing call must still come back as a clean JSON-RPC frame:
@@ -115,7 +115,7 @@ def test_stdout_is_pure_jsonrpc_and_logs_go_to_stderr():
     errlog = "".join(err_chunks)
     stdout_lines = [ln for ln in stdout_lines if ln.strip()]
 
-    # every stdout line is a JSON-RPC 2.0 frame — no stray text whatsoever
+    # every stdout line is a JSON-RPC 2.0 frame - no stray text whatsoever
     for ln in stdout_lines:
         obj = json.loads(ln)  # raises -> test fails if any line isn't JSON
         assert obj.get("jsonrpc") == "2.0", f"non-JSON-RPC line on stdout: {ln!r}"
@@ -135,7 +135,7 @@ def test_stdout_is_pure_jsonrpc_and_logs_go_to_stderr():
 
 def test_websocket_bind_failure_does_not_kill_mcp():
     """Robustness gate: if the websocket port is already taken (a stale instance,
-    a second session), the MCP stdio channel — the agent's only contract — must
+    a second session), the MCP stdio channel - the agent's only contract - must
     still come up and answer. We occupy a port, point the server at it via
     ``WS_PORT``, and assert ``tools/list`` still returns over stdio."""
     busy = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -153,7 +153,7 @@ def test_websocket_bind_failure_does_not_kill_mcp():
         {"jsonrpc": "2.0", "method": "notifications/initialized"},
         {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
         # a real mutation must carry the "live canvas unavailable" warning back to
-        # the agent (the agent never sees stderr — the MCP reply is its only channel)
+        # the agent (the agent never sees stderr - the MCP reply is its only channel)
         {"jsonrpc": "2.0", "id": 3, "method": "tools/call",
          "params": {"name": "add_layer",
                     "arguments": {"type": "input",
@@ -195,7 +195,10 @@ def test_websocket_bind_failure_does_not_kill_mcp():
         assert len(tools["result"]["tools"]) == 13
         assert mutate is not None, "MCP did not answer add_layer despite the websocket bind failing"
         warnings = mutate["result"]["structuredContent"]["warnings"]
-        assert any("canvas unavailable" in w.lower() for w in warnings), warnings
+        # the warning must be actionable, not just "something's wrong": it names
+        # the busy port and the constant to change (main.py `_busy_port_message`)
+        assert any("already in use" in w.lower() and "DEFAULT_WS_PORT" in w
+                   for w in warnings), warnings
     finally:
         p.stdin.close()
         busy.close()
@@ -220,38 +223,37 @@ def _wait_listening(port, timeout=15.0):
     return False
 
 
-def test_new_backend_reclaims_canvas_port_from_stale_backend():
-    """Single-canvas-owner guarantee: when a second backend starts on a port
-    already held by a *previous nn-architect backend*, it reclaims the port
-    (terminating the old instance) instead of running headless — so the human
-    always watches the newest session and never has to hunt down stale processes.
-    A *foreign* process is never killed (see the test above); this only fires for
-    a process we can positively identify as our own backend."""
+def test_second_backend_warns_instead_of_taking_the_port():
+    """Busy-port contract: a backend never wrestles the canvas port away from
+    whoever holds it - not even from another copy of itself. The first instance
+    keeps serving; the second refuses to start (standalone mode has a terminal,
+    so exiting loudly is the clearest signal) and its message names both remedies
+    so the user isn't left guessing."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("127.0.0.1", 0))
         port = s.getsockname()[1]
 
     env = {**os.environ, "WS_PORT": str(port), "MODE": "standalone",
-           "LOG_FILE": os.path.join(BACKEND, "_scratch", "test_reclaim.log")}
+           "LOG_FILE": os.path.join(BACKEND, "_scratch", "test_busy_port.log")}
 
     def spawn():
         return subprocess.Popen([PY, "main.py"], cwd=BACKEND, stdin=subprocess.PIPE,
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                 text=True, env=env)
 
-    procs = [spawn()]  # the "stale" backend
+    procs = [spawn()]  # the incumbent that owns the canvas
     try:
         assert _wait_listening(port), "first backend never came up"
-        procs.append(spawn())  # the new backend should take the port over
-        stale, fresh = procs
+        procs.append(spawn())  # the newcomer should bounce off the busy port
+        incumbent, newcomer = procs
 
-        deadline = time.time() + 15
-        while time.time() < deadline and stale.poll() is None:
-            time.sleep(0.1)
-        assert stale.poll() is not None, "stale backend was not terminated by the new one"
-        # the port is still served — by the new backend, which therefore reclaimed it
-        assert _wait_listening(port), "new backend did not take over the canvas port"
-        assert fresh.poll() is None, "new backend exited instead of serving"
+        assert newcomer.wait(timeout=15) == 1, "newcomer should exit(1) on a busy port"
+        assert incumbent.poll() is None, "incumbent was killed - it must be left alone"
+        assert _wait_listening(port), "incumbent stopped serving the canvas port"
+
+        err = newcomer.stderr.read()
+        assert "already in use" in err.lower(), err
+        assert "DEFAULT_WS_PORT" in err, err
     finally:
         for p in procs:
             p.stdin.close()

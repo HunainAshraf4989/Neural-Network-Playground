@@ -7,7 +7,7 @@ import path from "node:path";
 import { CATALOG, CATEGORY_COLORS } from "./catalog.js";
 
 // Ground truth: import backend/layers.py and dump its CATALOG. This guarantees
-// the frontend mirror can never silently drift from the backend — if a layer is
+// the frontend mirror can never silently drift from the backend - if a layer is
 // added, renamed, or its params change in layers.py, this test goes red until
 // catalog.js matches, so palette drags can't start failing in production.
 const here = path.dirname(fileURLToPath(import.meta.url));

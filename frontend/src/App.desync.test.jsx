@@ -6,7 +6,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 // Unlike App.test.jsx's inert stand-in, this React Flow mock *applies* change
 // events to controlled state the way the real one does (a `remove` change drops
 // the element). It also exposes buttons that fire a spurious "remove everything"
-// change stream — exactly what React Flow does internally when it can't resolve
+// change stream - exactly what React Flow does internally when it can't resolve
 // an element for a frame. App must drop those (backend owns existence), so the
 // canvas keeps showing what the backend still has.
 function applyMini(changes, items) {

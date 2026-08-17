@@ -78,7 +78,7 @@ export default function ParamsPanel({ node, onSave, onClose, onDelete, onUngroup
         <div className="params__actions">
           <button type="submit" className="params__save">Save</button>
           {/* Composite blocks (transformer, stacked/bidi RNN) can be broken
-              into their real sub-layers — a persistent store mutation, unlike
+              into their real sub-layers - a persistent store mutation, unlike
               the read-only Expand view. */}
           {isUngroupable({ type, params: node.data.params }) && (
             <button type="button" className="params__ungroup" onClick={() => onUngroup(node.id)}>

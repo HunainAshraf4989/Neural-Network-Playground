@@ -15,7 +15,7 @@
 // hints (the backend `layout` channel) and the user's own drag positions.
 // Pure: takes {nodes, edges}, returns { [nodeId]: {x, y} }.
 
-export const COL_GAP = 208; // column step (px) — wider than a node cell (150) so edges have room
+export const COL_GAP = 208; // column step (px) - wider than a node cell (150) so edges have room
 export const ROW_GAP = 188; // row step (px)
 
 // "n12" → 12, for stable numeric ordering. Non-conforming ids sort last by id.
@@ -37,7 +37,7 @@ export const snapToCell = (p) =>
 // included). Empty when there is no input node. App uses this to keep a node
 // that *loses* its path from input (e.g. the user deleted an upstream edge)
 // parked at its current position instead of collapsing it back to the input
-// column — see the "sticky" rule in App.jsx. Pure; ignores edges to/from
+// column - see the "sticky" rule in App.jsx. Pure; ignores edges to/from
 // unknown nodes (mirrors computeLayout).
 export function reachableFromInput(arch) {
   const nodes = arch?.nodes ?? [];

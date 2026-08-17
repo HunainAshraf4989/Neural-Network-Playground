@@ -8,7 +8,7 @@ Pipeline:
      inline ``LayerExecutionError``, inline ``_merge_add`` (if any add merge),
      inline ``PositionalEncoding`` (if any positional_encoding), then the model.
 
-The generated file imports NOTHING from this project — copy it next to a fresh
+The generated file imports NOTHING from this project - copy it next to a fresh
 python with only ``torch`` installed and it runs unmodified.
 """
 

@@ -23,7 +23,7 @@ def _cap_memory():
     """Cap THIS validation process's memory before torch loads, so a pathological
     architecture (e.g. a linear layer with 100k features → tens of GB of weights)
     fails with a clean MemoryError instead of driving the whole machine into
-    swap-thrash or tripping the OS OOM killer — which may kill unrelated processes.
+    swap-thrash or tripping the OS OOM killer - which may kill unrelated processes.
     The 10s timeout in ``validator.py`` guards against *hangs*; this guards against
     *memory*. The cap is on address space (RLIMIT_AS, so it also covers mmap'd
     tensor allocations) and is tunable via ``NN_VALIDATION_MEM_MB``.

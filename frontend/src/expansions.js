@@ -1,4 +1,4 @@
-// "Expand architecture" — a FRONTEND-ONLY view transform that substitutes a
+// "Expand architecture" - a FRONTEND-ONLY view transform that substitutes a
 // composite macro-layer with a read-only subgraph showing its real PyTorch
 // internals. It mirrors what codegen.py emits for each type, so the expanded
 // picture is truthful (a transformer_encoder_layer becomes self-attn + residual
@@ -12,7 +12,7 @@
 //
 // Sub-nodes reuse REAL catalog types wherever one exists (linear, layernorm, relu,
 // dropout, add, concat, multihead_attention, rnn/lstm/gru) so they size and draw
-// for free; the one construct with no catalog equivalent — the attention core —
+// for free; the one construct with no catalog equivalent (the attention core)
 // carries an explicit `category` instead. Every sub-node is flagged `synthetic`
 // so the canvas renders it dimmed and inert (no drag / connect / delete / edit).
 //
@@ -41,7 +41,7 @@ function sub(parentId, name, type, params, { label, category } = {}) {
   };
 }
 
-// nn.TransformerEncoderLayer (post-norm default, activation=relu) — the showcase.
+// nn.TransformerEncoderLayer (post-norm default, activation=relu) - the showcase.
 // Forward (from codegen.py:125 -> torch):
 //   x = norm1(x + dropout(self_attn(x, x, x)))          # self-attention block
 //   x = norm2(x + dropout(linear2(dropout(relu(linear1(x))))))   # feed-forward block
@@ -82,7 +82,7 @@ function expandTransformer(node) {
   return { nodes, edges, entries: [E("attn"), E("res1")], exit: E("norm2") };
 }
 
-// nn.MultiheadAttention (self-attention) — Q/K/V projections into the scaled
+// nn.MultiheadAttention (self-attention) - Q/K/V projections into the scaled
 // dot-product attention core (over `num_heads` heads), then the output projection.
 function expandMultiheadAttention(node) {
   const id = node.id;
@@ -107,7 +107,7 @@ function expandMultiheadAttention(node) {
 }
 
 // A stacked / bidirectional RNN (rnn|lstm|gru) unrolls into its per-layer cells.
-// Only meaningful when there's actually more than one cell — a plain 1-layer
+// Only meaningful when there's actually more than one cell - a plain 1-layer
 // unidirectional RNN has nothing graph-level to show (gate internals are below
 // this canvas's altitude), so it returns null and is left as a single node.
 function expandRecurrent(node) {
@@ -171,7 +171,7 @@ export function isExpandable(node) {
   return expandNode(node) != null;
 }
 
-// Whether the node can be UNGROUPED — persistently decomposed into real store
+// Whether the node can be UNGROUPED - persistently decomposed into real store
 // nodes by the backend (unlike Expand, a read-only view). Same families as
 // isExpandable EXCEPT plain multihead_attention: its expansion needs the
 // synthetic scaled_dot_product_attention type, which isn't in the catalog yet.

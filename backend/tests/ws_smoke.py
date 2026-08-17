@@ -1,4 +1,4 @@
-"""Stage 4 verification gate — scripted websocket client against a *running*
+"""Stage 4 verification gate - scripted websocket client against a *running*
 standalone backend (real network transport, not the in-process TestClient).
 
 Usage (per the handoff gate):
@@ -40,7 +40,7 @@ async def main() -> int:
         return 1
 
     async with ws:
-        # 1. initial state on connect — empty graph
+        # 1. initial state on connect - empty graph
         state = await _recv(ws)
         assert state["type"] == "state", state
         assert state["data"] == {"nodes": [], "edges": []}, state["data"]

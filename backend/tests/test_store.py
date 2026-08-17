@@ -1,4 +1,4 @@
-"""Unit tests for ArchitectureStore — one happy path + every rejection branch
+"""Unit tests for ArchitectureStore - one happy path + every rejection branch
 for each of the 9 operations, plus orphan-node tolerance and real-execution
 validation (CNN passes, channel-mismatch fails naming the node).
 
@@ -205,14 +205,14 @@ async def test_connect_layers_second_inbound_into_non_merge_rejected():
 
 @asynctest
 async def test_connect_layers_multiple_inbound_into_merge_allowed():
-    # merge nodes (add/concat) are the only multi-input nodes — must still accept >1 inbound.
+    # merge nodes (add/concat) are the only multi-input nodes - must still accept >1 inbound.
     s = ArchitectureStore()
     n1 = await _input(s, shape=(4,))
     n2 = (await s.add_layer("linear", {"in_features": 4, "out_features": 4}))["node_id"]
     n3 = (await s.add_layer("add", {}))["node_id"]
     await s.connect_layers(n1, n2)
     await s.connect_layers(n1, n3)
-    await s.connect_layers(n2, n3)   # second inbound into the merge — allowed
+    await s.connect_layers(n2, n3)   # second inbound into the merge - allowed
     assert [(e["from"], e["to"]) for e in (await s.get_architecture())["edges"]
             if e["to"] == n3] == [(n1, n3), (n2, n3)]
 
@@ -263,7 +263,7 @@ async def test_get_architecture_preserves_edge_insertion_order():
     n2 = (await s.add_layer("relu", {}))["node_id"]
     n3 = (await s.add_layer("gelu", {}))["node_id"]
     nc = (await s.add_layer("concat", {"dim": 1}))["node_id"]
-    # connect n3 before n2 — concat order must follow this call order, not id order
+    # connect n3 before n2 - concat order must follow this call order, not id order
     await s.connect_layers(n1, n2)
     await s.connect_layers(n1, n3)
     await s.connect_layers(n3, nc)
@@ -322,7 +322,7 @@ async def test_generate_code_without_input_rejected():
 
 
 # --------------------------------------------------------------------------- #
-# validate_architecture (real subprocess execution — the only shape check)
+# validate_architecture (real subprocess execution - the only shape check)
 # --------------------------------------------------------------------------- #
 @asynctest
 async def test_validate_architecture_cnn_passes():
@@ -369,7 +369,7 @@ async def test_validate_architecture_no_input_reports_cleanly():
 
 
 # --------------------------------------------------------------------------- #
-# orphan tolerance — an unwired node is allowed, surfaced as a warning
+# orphan tolerance - an unwired node is allowed, surfaced as a warning
 # --------------------------------------------------------------------------- #
 @asynctest
 async def test_orphan_node_allowed_and_warned():
@@ -526,7 +526,7 @@ async def test_layout_hint_dropped_on_remove_and_cleared_on_reset():
 
 
 # --------------------------------------------------------------------------- #
-# ungroup — composite -> real editable sub-layers
+# ungroup - composite -> real editable sub-layers
 # --------------------------------------------------------------------------- #
 async def _transformer_chain(s):
     """input(seq) -> transformer_encoder_layer -> linear; returns the three ids."""

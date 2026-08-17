@@ -1,16 +1,19 @@
 // React hook owning the websocket to the backend. Holds the shared architecture
 // from `state` broadcasts and exposes `send(message)` for the §12 client
 // messages. The backend is the single source of truth, so this hook never
-// mutates `arch` optimistically — it only renders what the server broadcasts
+// mutates `arch` optimistically - it only renders what the server broadcasts
 // back. `ack`/`error` replies are surfaced as a transient status line.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import * as proto from "./protocol.js";
 
-// Backend websocket URL. Defaults to the local backend; override with the
-// VITE_WS_URL env var (e.g. to point the dev UI at a backend on another port).
-const DEFAULT_URL = import.meta.env?.VITE_WS_URL || "ws://localhost:8765/ws";
+// Backend websocket URL. The port is NOT hardcoded here: vite.config.js reads
+// DEFAULT_WS_PORT out of backend/config.py and injects it as `__NN_WS_PORT__`,
+// so editing that one constant moves the backend and the canvas together. The
+// VITE_WS_URL env var still overrides the whole URL for one-off runs.
+const WS_PORT = typeof __NN_WS_PORT__ === "undefined" ? 8765 : __NN_WS_PORT__;
+const DEFAULT_URL = import.meta.env?.VITE_WS_URL || `ws://localhost:${WS_PORT}/ws`;
 const RECONNECT_MS = 1500;
 
 export function useArchitectureSocket(url = DEFAULT_URL) {

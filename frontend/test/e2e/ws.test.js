@@ -1,6 +1,6 @@
 // End-to-end protocol test: boots the REAL standalone backend and drives the
 // websocket using the frontend's own message builders (src/protocol.js). This is
-// the rigorous "every scenario" gate for Stage 5 — it proves the messages the UI
+// the rigorous "every scenario" gate for Stage 5 - it proves the messages the UI
 // sends are accepted/rejected exactly as intended, over the real network
 // transport, against the single ArchitectureStore.
 //

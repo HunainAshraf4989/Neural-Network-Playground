@@ -1,6 +1,6 @@
 // One node per layer (spec §13), but its GLYPH is chosen by category so the graph
-// reads like the conventional diagram for whatever was built — a CNN's conv slabs,
-// an MLP's neuron stacks, a transformer's blocks — and its SIZE scales with the
+// reads like the conventional diagram for whatever was built - a CNN's conv slabs,
+// an MLP's neuron stacks, a transformer's blocks - and its SIZE scales with the
 // layer's feature width (see dims.js) so the network's silhouette is legible: an
 // autoencoder visibly pinches at its latent, a CNN's channels swell. The idiom is
 // derived from the graph, never toggled.
@@ -24,7 +24,7 @@ const MAX_INLINE_PARAMS = 4;
 const DEFAULT_DIAMETER = 92; // used when a node is rendered without a computed size
 
 // In-place ops (activation/norm/dropout/flatten/pooling) operate on whatever
-// tensor flows through them — they aren't representations, so they render at a
+// tensor flows through them - they aren't representations, so they render at a
 // fixed small size and stay "quiet", letting the structural layers (linear/conv/…)
 // carry the silhouette instead of a giant relu dwarfing its own linear.
 const QUIET_CATEGORIES = new Set(["activation", "norm", "regularization", "shape", "pooling"]);
@@ -32,7 +32,7 @@ const QUIET_DIAMETER = 64;
 
 // The node sits in a fixed-size cell (matches .nn-node in styles.css) with the
 // glyph centered inside, so connection handles must be INSET to the glyph's real
-// edge — otherwise they float in the empty cell, away from the visible shape, and
+// edge - otherwise they float in the empty cell, away from the visible shape, and
 // the graph becomes fiddly to wire by hand. Each family's width relative to `--d`:
 const NODE_BOX = 150;
 const WIDTH_FACTOR = { stack: 0.72, block: 1.18, loop: 1.18, merge: 0.82, tag: 1.12 };
@@ -44,7 +44,7 @@ function formatValue(v) {
 }
 
 // Break long, underscore-joined type names (e.g. transformer_encoder_layer) at
-// their word boundaries so a label wraps BY WORD — never mid-letter — and stays
+// their word boundaries so a label wraps BY WORD - never mid-letter - and stays
 // inside the glyph. A `<wbr>` after each underscore/space is a *soft* break the
 // browser only takes when the line overflows (paired with overflow-wrap in the
 // .nn-node__label CSS, which only splits a single word as a last resort).
@@ -58,7 +58,7 @@ function labelWithBreaks(label) {
     );
 }
 
-// Glyph family per category — the visual vocabulary that makes each NN family
+// Glyph family per category - the visual vocabulary that makes each NN family
 // recognizable. Everything not called out (activation/norm/pooling/dropout/
 // shape/embedding) is a plain circle, the quiet "in-place op" node.
 function glyphFamily(category) {
@@ -82,10 +82,10 @@ function mergeSign(type) {
 // dims.computeNeuronCounts) is a representative number scaled to the layer's size, so
 // a wider layer shows more circles; the exact size stays in the dim label, and the
 // fully-connected lines between columns are drawn by NeuronBundleEdge. Collapsed,
-// these layers keep their iconic glyph — the neurons only appear once you Expand.
+// these layers keep their iconic glyph - the neurons only appear once you Expand.
 //
 // When the layer truly has more neurons than we draw (`truncated`), a vertical ⋮ sits
-// in the middle to stand for the omitted units — the classic "…and N more neurons"
+// in the middle to stand for the omitted units - the classic "…and N more neurons"
 // cue. It occupies one circle-slot (see dims.neuronSplit / neuronYOffsets), so the
 // bundle edges still land on the visible circles.
 function NeuronColumn({ count, truncated }) {
@@ -105,7 +105,7 @@ function NeuronColumn({ count, truncated }) {
 }
 
 // Display-only short names. A glyph's SIZE encodes feature width (dims.js), so a
-// layer whose width is the graph's minimum renders at MIN_DIAMETER — about 71x50px
+// layer whose width is the graph's minimum renders at MIN_DIAMETER - about 71x50px
 // for a block. The raw schema type `transformer_encoder_layer` cannot fit there at a
 // readable size: its longest word alone overflows the shell, so the CSS last-resort
 // break splits it mid-letter and the extra lines spill outside the border. These are
@@ -139,8 +139,8 @@ function blockSub(type) {
 }
 
 export default function LayerNode({ data, selected }) {
-  // Color from category (not type) so expansion sub-nodes with a synthetic type —
-  // e.g. the attention core — still color correctly; for a normal node the
+  // Color from category (not type) so expansion sub-nodes with a synthetic type
+  // (e.g. the attention core) still color correctly; for a normal node the
   // category IS the type's category, so this is unchanged.
   const color = colorOfCategory(data.category);
   const label = data.label ?? data.type; // sub-nodes carry a friendlier label
@@ -148,7 +148,7 @@ export default function LayerNode({ data, selected }) {
   const params = Object.entries(data.params ?? {}).slice(0, MAX_INLINE_PARAMS);
   const family = glyphFamily(data.category);
   // In the EXPANDED view, per-neuron layers (input / linear / activation) render as a
-  // column of neuron circles — the classic deep-net diagram. Collapsed, or for the
+  // column of neuron circles - the classic deep-net diagram. Collapsed, or for the
   // synthetic sub-layers inside an expanded composite block, they keep their glyph.
   const showNeurons = data.expanded && !data.synthetic && NEURON_CATEGORIES.has(data.category);
   const diameter = QUIET_CATEGORIES.has(data.category)

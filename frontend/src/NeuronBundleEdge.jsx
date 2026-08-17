@@ -5,11 +5,11 @@
 //
 // Alignment: circles are centered on the node's vertical center, and React Flow gives
 // us the handle position (sourceX/Y, targetX/Y) at that same center. So circle i sits
-// at sourceY + neuronYOffsets(count)[i] — the exact offsets the node renders with (both
+// at sourceY + neuronYOffsets(count)[i] - the exact offsets the node renders with (both
 // import them from dims.js), which is what makes the lines land on the circles.
 //
 // Read-only by design (the expanded view doesn't edit structure), so there's no hover
-// ✕ — the real connection is edited back in the collapsed view.
+// ✕ - the real connection is edited back in the collapsed view.
 
 import { neuronYOffsets } from "./dims.js";
 
@@ -17,11 +17,11 @@ export default function NeuronBundleEdge({ sourceX, sourceY, targetX, targetY, d
   const sc = data?.sourceCount ?? 1;
   const tc = data?.targetCount ?? 1;
   // Truncated columns skip the middle slot (the ⋮), so the endpoints must use the
-  // same slot math the node's circles do — otherwise lines miss the circles.
+  // same slot math the node's circles do - otherwise lines miss the circles.
   const sourceYs = neuronYOffsets(sc, data?.sourceTruncated).map((o) => sourceY + o);
   const targetYs = neuronYOffsets(tc, data?.targetTruncated).map((o) => targetY + o);
 
-  // One <path> holding every M…L segment — one DOM node for the whole bundle.
+  // One <path> holding every M…L segment - one DOM node for the whole bundle.
   const segments = [];
   for (const sy of sourceYs) {
     for (const ty of targetYs) {

@@ -26,7 +26,7 @@ frontend/dist/
 .DS_Store
 *.swp
 
-# Internal implementation/planning docs — kept locally, not part of the public repo
+# Internal implementation/planning docs - kept locally, not part of the public repo
 /CLAUDE.md
 /Tentative plan.md
 /.claude/handoff/

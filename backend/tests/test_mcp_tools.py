@@ -2,8 +2,8 @@
 
 These exercise the tools the way Claude Desktop does: through a real in-memory
 MCP client session connected to the FastMCP server from ``build_mcp``. That means
-we cover the full path — argument schema validation, the thin adapter, the store,
-and the way errors surface as MCP error results (``isError: true``) — not just
+we cover the full path - argument schema validation, the thin adapter, the store,
+and the way errors surface as MCP error results (``isError: true``) - not just
 direct Python calls.
 
 The store's structural rules themselves are unit-tested exhaustively in
@@ -377,7 +377,7 @@ async def test_get_architecture_shape_and_no_broadcast():
 
 
 # --------------------------------------------------------------------------- #
-# validate_architecture (read, no broadcast — runs real execution)
+# validate_architecture (read, no broadcast - runs real execution)
 # --------------------------------------------------------------------------- #
 @asynctest
 async def test_validate_valid_cnn():
@@ -546,7 +546,7 @@ async def test_round_trip_build_validate_generate_reset():
 async def test_canvas_warning_surfaces_on_mutations_and_get_architecture():
     """When main.py runs MCP-only (websocket port busy), build_mcp is handed a
     canvas_warning; it must ride along on every mutation + get_architecture reply
-    so the agent — whose only channel is the MCP result, never stderr — learns
+    so the agent - whose only channel is the MCP result, never stderr - learns
     the UI won't reflect its edits. Other reads stay clean."""
     warn = "live canvas unavailable: websocket port 8765 is already in use"
     store = ArchitectureStore()
@@ -564,7 +564,7 @@ async def test_canvas_warning_surfaces_on_mutations_and_get_architecture():
 
 @asynctest
 async def test_no_canvas_warning_when_canvas_up():
-    """Default (canvas up): replies are unchanged — no warnings key injected."""
+    """Default (canvas up): replies are unchanged - no warnings key injected."""
     async with harness() as (session, _store, _c):  # harness builds mcp w/o canvas_warning
         res = ok(await session.call_tool(
             "add_layer", {"type": "input", "params": {"shape": [1, 8, 8], "dtype": "float32"}}))
