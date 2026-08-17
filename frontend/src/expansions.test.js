@@ -5,7 +5,7 @@ const idsOf = (graph) => graph.nodes.map((n) => n.id);
 const hasEdge = (graph, from, to) =>
   graph.edges.some((e) => e.from === from && e.to === to);
 
-describe("expandGraph — pass-through", () => {
+describe("expandGraph - pass-through", () => {
   it("leaves a graph with no composite layers untouched", () => {
     const arch = {
       nodes: [

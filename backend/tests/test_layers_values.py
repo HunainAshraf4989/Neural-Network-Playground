@@ -1,10 +1,10 @@
-"""Per-param VALUE validation in layers.validate_and_merge (deploy S0).
+"""Per-param VALUE validation in layers.validate_and_merge.
 
 Structural checks (unknown type/param, missing required) are covered by the
 store tests; these cover the value layer: wrong types (the "100000"-as-string
 case that used to slip past the validator's param-count preflight), bool
 masquerading as int, out-of-bounds ints, probability ranges, shape lists, and
-the dtype/mode enums. Shape *math* is still validator.py's job — nothing here
+the dtype/mode enums. Shape *math* is still validator.py's job - nothing here
 asserts tensor shapes.
 """
 

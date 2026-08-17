@@ -1,4 +1,4 @@
-"""MCP tool surface — thin adapters over ``ArchitectureStore`` (spec §9).
+"""MCP tool surface - thin adapters over ``ArchitectureStore`` (spec §9).
 
 Each tool calls exactly **one** store method and returns its dict.
 There is no graph-mutation logic in this module: the store is the single
@@ -9,7 +9,7 @@ Structural errors are raised by the store as ``ValueError``; FastMCP turns any
 exception raised inside a tool into an MCP error result (``isError: true`` with
 the message), so the agent always learns *why* a call was rejected. After every
 **successful mutation** we fire the ``broadcast`` hook so websocket clients
-(Stage 4) re-render — read-only tools never broadcast.
+(Stage 4) re-render - read-only tools never broadcast.
 
 stdout is reserved for MCP protocol framing (CLAUDE.md invariant 1): nothing
 here prints; the module logger writes to stderr.
@@ -24,7 +24,7 @@ log = logging.getLogger(__name__)
 
 
 async def _noop_broadcast() -> None:
-    """Default broadcast hook for Stage 3 — wired to ws_app in Stage 4."""
+    """Default broadcast hook for Stage 3 - wired to ws_app in Stage 4."""
 
 
 def build_mcp(store, broadcast=None, canvas_warning=None) -> FastMCP:
@@ -36,7 +36,7 @@ def build_mcp(store, broadcast=None, canvas_warning=None) -> FastMCP:
     ``canvas_warning`` is an optional string set by ``main.py`` when the live
     canvas is unavailable (the websocket port was busy, so this process runs
     MCP-only). When set, it is attached to every mutation and ``get_architecture``
-    response so the agent — whose ONLY channel is the MCP reply, never stderr —
+    response so the agent (whose ONLY channel is the MCP reply, never stderr)
     learns the UI will not reflect its changes.
     """
     fire = broadcast or _noop_broadcast
@@ -58,7 +58,7 @@ def build_mcp(store, broadcast=None, canvas_warning=None) -> FastMCP:
         against that type's required/optional fields, applying defaults for any
         omitted. Rejects a second ``input`` node. ``layout`` is an OPTIONAL
         placement hint ``{"col": int, "row": int}`` (both >= 0, either omittable)
-        used only by the canvas — it never affects validation or generated code.
+        used only by the canvas - it never affects validation or generated code.
         Call ``get_catalog`` first to learn valid types and their params.
         Returns ``{node_id}``."""
         log.info("mcp add_layer type=%s params=%s layout=%s", type, params, layout)
@@ -68,7 +68,7 @@ def build_mcp(store, broadcast=None, canvas_warning=None) -> FastMCP:
 
     @mcp.tool()
     async def add_layers(layers: list[dict[str, Any]]) -> dict[str, Any]:
-        """Add MANY layers in one atomic call — use this instead of looping
+        """Add MANY layers in one atomic call - use this instead of looping
         ``add_layer`` when building a whole network. ``layers`` is a list of
         ``{"type": str, "params": dict, "layout"?: {"col","row"}}``. Either all
         are added (ids returned in order, e.g. ``n5``..``n9``) or, on the first
@@ -125,7 +125,7 @@ def build_mcp(store, broadcast=None, canvas_warning=None) -> FastMCP:
 
     @mcp.tool()
     async def connect_layers_batch(edges: list[dict[str, str]]) -> dict[str, Any]:
-        """Add MANY edges in one atomic call — use this instead of looping
+        """Add MANY edges in one atomic call - use this instead of looping
         ``connect_layers`` when wiring a whole network. ``edges`` is a list of
         ``{"from_id": str, "to_id": str}``, applied in order with the same rules
         as ``connect_layers`` (each checked against earlier edges in the batch).

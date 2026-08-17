@@ -7,13 +7,13 @@ import path from "node:path";
 import { CATALOG, CATEGORY_COLORS } from "./catalog.js";
 
 // Ground truth: import backend/layers.py and dump its CATALOG. This guarantees
-// the frontend mirror can never silently drift from the backend — if a layer is
+// the frontend mirror can never silently drift from the backend - if a layer is
 // added, renamed, or its params change in layers.py, this test goes red until
 // catalog.js matches, so palette drags can't start failing in production.
 const here = path.dirname(fileURLToPath(import.meta.url));
 const backendDir = path.resolve(here, "../../backend");
-// CI sets PYTHON=python3; local devs point it at their venv interpreter.
-const PYTHON = process.env.PYTHON || "python3";
+// The project venv (see CLAUDE.md); override with PYTHON on another machine.
+const PYTHON = process.env.PYTHON || "/home/hunain/base/bin/python";
 
 function pythonWorks() {
   try {

@@ -2,17 +2,17 @@
 
 Every mutation of the architecture flows through one of this class's methods.
 The MCP tool handlers (``mcp_tools.py``) and the websocket handler (``ws_app.py``)
-are thin adapters that call these same methods — there is never a second code
+are thin adapters that call these same methods - there is never a second code
 path that mutates the graph, so the canvas can never desync from what the agent
 believes exists.
 
 This layer enforces **structural** rules only (unknown type, missing param,
 self-loop, cycle, duplicate edge, second input, ``to_id`` is input). Tensor-shape
-correctness is decided **exclusively** by real execution in ``validator.py`` —
+correctness is decided **exclusively** by real execution in ``validator.py``,
 never here. Structural violations are surfaced as ``ValueError``; the adapters
 turn those into MCP/websocket error responses.
 
-Node schema is the §7 data model: ``{"id", "type", "params"}`` — geometry never
+Node schema is the §7 data model: ``{"id", "type", "params"}`` - geometry never
 lives inside a node, so the validator and codegen never see it. The store does
 keep an *optional, separate* ``layout`` map (id -> {col, row}) that an agent may
 set to hint placement; it is broadcast alongside the graph but kept out of node
@@ -39,10 +39,10 @@ import validator
 # scaled_dot_product_attention type that isn't in the catalog (yet).
 #
 # A blueprint is ``(specs, edges, entries, exit)``:
-#   specs   — [(name, type, params)] in creation order
-#   edges   — [(from_name, to_name)] internal wiring
-#   entries — names every external predecessor is rewired into
-#   exit    — name whose output feeds every external successor
+#   specs   - [(name, type, params)] in creation order
+#   edges   - [(from_name, to_name)] internal wiring
+#   entries - names every external predecessor is rewired into
+#   exit    - name whose output feeds every external successor
 # --------------------------------------------------------------------------- #
 
 def _transformer_blueprint(params):
@@ -80,7 +80,7 @@ def _transformer_blueprint(params):
 def _recurrent_blueprint(layer_type, params):
     """A stacked/bidirectional rnn|lstm|gru unrolls into its per-layer cells
     (bidirectional: forward + backward cell -> concat on the feature dim).
-    Returns ``None`` for a plain 1-layer unidirectional cell — nothing
+    Returns ``None`` for a plain 1-layer unidirectional cell - nothing
     graph-level to unroll (gate internals are below this canvas's altitude).
     """
     num_layers = params["num_layers"]
@@ -131,7 +131,7 @@ class ArchitectureStore:
     def _clean_layout(layout):
         """Validate an optional placement hint and return the sanitised dict (only
         non-negative integer ``col``/``row`` keys). ``None``/``{}`` -> ``{}``.
-        Geometry never enters node params — this is a separate hint channel.
+        Geometry never enters node params - this is a separate hint channel.
         """
         if layout is None:
             return {}
@@ -207,7 +207,7 @@ class ArchitectureStore:
     async def add_layers(self, specs):
         """Add many nodes in one **atomic** call. ``specs`` is a list of
         ``{type, params, layout?}``. Either every node is added (returning ids in
-        order) or, on the first invalid spec, nothing is — the graph is rolled
+        order) or, on the first invalid spec, nothing is - the graph is rolled
         back so a partial batch never lands. Returns ``{node_ids}``.
         """
         if not isinstance(specs, list) or not specs:
@@ -273,7 +273,7 @@ class ArchitectureStore:
                 and any(e["to"] == to_id for e in self.edges)):
             raise ValueError(
                 f"node '{to_id}' (type '{to_node['type']}') already has an incoming edge; "
-                "non-merge nodes take exactly one input — disconnect it first, or use an "
+                "non-merge nodes take exactly one input - disconnect it first, or use an "
                 "'add'/'concat' merge node to combine multiple inputs")
         if self._would_create_cycle(from_id, to_id):
             raise ValueError(f"edge '{from_id}' -> '{to_id}' would create a cycle")
@@ -345,7 +345,7 @@ class ArchitectureStore:
                 if blueprint is None:
                     raise ValueError(
                         f"cannot ungroup '{node_id}': a 1-layer unidirectional "
-                        f"{layer_type} has no internal structure to unroll — only "
+                        f"{layer_type} has no internal structure to unroll - only "
                         "num_layers > 1 or bidirectional=true decomposes")
             else:
                 raise ValueError(
@@ -365,7 +365,7 @@ class ArchitectureStore:
                 # Rewire the composite's external edges IN PLACE (each pred feeds
                 # every entry; the exit feeds each successor). In-place keeps edge
                 # insertion order, which decides argument order for a downstream
-                # concat — remove+append would silently reorder it.
+                # concat - remove+append would silently reorder it.
                 rewired = []
                 for e in self.edges:
                     if e["to"] == node_id:
@@ -387,11 +387,11 @@ class ArchitectureStore:
     async def get_catalog(self):
         """Return the layer catalog (types, categories, required + optional params
         with defaults). Read-only and static, so it needs no lock. This is the
-        agent's discovery surface — no probing required."""
+        agent's discovery surface - no probing required."""
         return layers.describe_catalog()
 
     async def get_architecture(self):
-        """Full current state — ``{nodes, edges, layout}``, edges in stored
+        """Full current state - ``{nodes, edges, layout}``, edges in stored
         (insertion) order. Deep-copied so callers can't mutate shared state by
         reference. ``layout`` carries the optional placement hints (id -> {col,
         row}); it is *not* part of the node schema and never reaches the validator

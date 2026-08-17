@@ -1,4 +1,4 @@
-"""Scratch driver for Stage 1 — hand-built graphs, no MCP/ws/frontend.
+"""Scratch driver for Stage 1 - hand-built graphs, no MCP/ws/frontend.
 
 Run:  /home/hunain/base/bin/python backend/dev_smoke.py
 

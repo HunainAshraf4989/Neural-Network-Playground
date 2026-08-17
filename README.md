@@ -53,13 +53,9 @@ code, not by reading it.
 
 ## Demo
 
-> ▶️ &nbsp;**An animated walkthrough is coming soon.** Until then, here is the loop as stills.
 > Ask for *"a small CNN for 28×28 grayscale digits,"* and the layers land on the canvas as
 > the tool calls go out. Drag a node, change `out_channels`, delete an edge, and the AI
 > picks it up on its next `get_architecture`. Either side can hand control back to the other.
-
-<!-- TODO: replace the image below with the recording once ready:
-     ![An AI builds a CNN over MCP while a human watches the canvas](assets/live-build.gif) -->
 
 <div align="center">
   <img src="assets/params-edit.png" alt="A human editing a layer's params on the canvas while the AI watches" width="820">
@@ -79,16 +75,19 @@ A few architectures built on the canvas (these are the tool's own PNG exports):
 
 <br/>
 
-<table>
-<tr>
-<td width="50%" align="center"><img src="assets/residual.png" alt="A residual block with a skip connection into an add" width="430"></td>
-<td width="50%" align="center"><img src="assets/transformer.png" alt="A transformer encoder, a stack of self-attention layers" width="430"></td>
-</tr>
-<tr>
-<td align="center"><sub>A residual block: a skip connection into an <code>add</code>.</sub></td>
-<td align="center"><sub>A transformer encoder: a stack of self-attention layers.</sub></td>
-</tr>
-</table>
+<div align="center">
+  <img src="assets/residual.png" alt="A residual block with a skip connection arcing over two conv-norm pairs into an add" width="900">
+  <br/>
+  <sub>A residual block: the skip connection arcs over both conv/norm pairs into an <code>add</code>.</sub>
+</div>
+
+<br/>
+
+<div align="center">
+  <img src="assets/transformer.png" alt="An encoder-only transformer: embedding, positional encoding, four encoder layers, norm and a classifier head" width="900">
+  <br/>
+  <sub>An encoder-only transformer: embedding → positional encoding → four encoder layers → norm → head.</sub>
+</div>
 
 ---
 
@@ -216,9 +215,10 @@ class GeneratedModel(nn.Module):
 
 ## Quick start
 
-You need **Python 3.10+** (tested on 3.12), **Node 18+** (tested on 20), and an MCP client
-that can launch a local stdio server (for example, [Claude Code](https://docs.claude.com/en/docs/claude-code),
-which runs on macOS, Windows, and Linux).
+You need **Python 3.10+** (tested on 3.12), **Node 18+** (tested on 20), and an MCP client that
+can launch a local stdio server. [Claude Desktop](https://claude.ai/download) and
+[Claude Code](https://docs.claude.com/en/docs/claude-code) both work, on macOS, Windows, and Linux
+alike (this was developed on Ubuntu with Claude Desktop).
 
 <details open>
 <summary><b>1 · Backend</b></summary>
@@ -241,8 +241,9 @@ npm install
 npm run dev                          # canvas at http://localhost:5173
 ```
 
-Point the UI at a non-default backend with `VITE_WS_URL`
-(e.g. `VITE_WS_URL=ws://localhost:8799/ws npm run dev`).
+The canvas finds the backend on its own - it reads `DEFAULT_WS_PORT` from `backend/config.py`, so
+if you change the port there, you don't have to change anything here. To point the UI at a backend
+somewhere else entirely, set `VITE_WS_URL` (e.g. `VITE_WS_URL=ws://localhost:8799/ws npm run dev`).
 </details>
 
 <details open>
@@ -263,8 +264,17 @@ at your venv's Python and `backend/main.py`:
 }
 ```
 
-On Windows, the command is your venv's `Scripts\python.exe` and paths use backslashes.
-Then open the canvas in your browser and ask the client to build a network. Layers appear as
+Both paths must be absolute. On Windows the command is your venv's `Scripts\python.exe`, with
+backslashes. For Claude Desktop, that JSON goes in its config file, which lives at:
+
+| OS | Path |
+|----|------|
+| Linux | `~/.config/Claude/claude_desktop_config.json` |
+| macOS | `~/Library/Application Support/Claude/claude_desktop_config.json` |
+| Windows | `%APPDATA%\Claude\claude_desktop_config.json` |
+
+Claude Code instead takes `claude mcp add`, or the same block in `.mcp.json`. Restart the client
+after editing, then open the canvas in your browser and ask it to build a network. Layers appear as
 it calls the tools.
 </details>
 
@@ -276,9 +286,17 @@ python backend/main.py                 # full: MCP over stdio + websocket on :87
 MODE=standalone python backend/main.py # websocket only, for frontend work
 ```
 
-Environment knobs: `WS_PORT` (default 8765), `LOG_FILE` (default `logs/nn_architect.log`,
-logs go to stderr and this file, never stdout), `NN_VALIDATION_MAX_PARAMS` (default 500M),
-`NN_VALIDATION_MEM_MB` (default 4096).
+**If port 8765 is already taken,** change `DEFAULT_WS_PORT` in `backend/config.py`. That single
+number is the source of truth: the backend binds it and the frontend reads it out of that file, so
+the canvas follows automatically. The backend never fights for a busy port - it tells you the port
+is in use and names both fixes (free it, or change that constant). In standalone mode it says so in
+your terminal and exits; in full mode it keeps serving MCP without the canvas and puts the same
+warning in every tool reply, so the agent knows the UI has gone stale.
+
+Environment knobs, for one-off runs: `WS_PORT` (overrides `DEFAULT_WS_PORT`), `VITE_WS_URL`
+(overrides the frontend's whole websocket URL), `LOG_FILE` (default `logs/nn_architect.log`; logs go
+to stderr and this file, never stdout), `NN_VALIDATION_MAX_PARAMS` (default 500M),
+`NN_VALIDATION_MEM_MB` (default 8192).
 </details>
 
 ---
@@ -342,8 +360,8 @@ frontend/
 ## Tests
 
 ```bash
-cd backend && python -m pytest     # 126 tests
-cd frontend && npm test            # 132 tests
+cd backend && python -m pytest     # 165 tests
+cd frontend && npm test            # 133 tests
 ```
 
 ## Scope

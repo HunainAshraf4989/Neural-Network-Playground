@@ -1,7 +1,7 @@
 """Full-mode (MCP stdio + uvicorn) integration guards for Stage 4.
 
 ``test_ws_app.py`` proves the ws adapter in isolation; this module spawns
-``backend/main.py`` in **full mode** — the real dual surface Claude Desktop runs —
+``backend/main.py`` in **full mode** (the real dual surface Claude Desktop runs)
 and proves the two things only the combined process can show:
 
 1. **Cross-surface single-store sync (CLAUDE.md invariant 2).** An ``add_layer``
@@ -96,7 +96,7 @@ async def test_cross_surface_sync_mcp_and_ws_share_one_store():
             assert _wait_for_port(port), "websocket server never came up in full mode"
 
             async with websockets.connect(ws_url) as ws:
-                # initial state on connect — empty
+                # initial state on connect - empty
                 assert (await recv(ws))["data"] == {"nodes": [], "edges": [], "layout": {}}
 
                 # (1) MCP mutation must broadcast to the ws client
@@ -140,7 +140,7 @@ def test_full_mode_stdout_is_pure_jsonrpc_despite_uvicorn():
         {"jsonrpc": "2.0", "id": 4, "method": "tools/call",
          "params": {"name": "connect_layers",
                     "arguments": {"from_id": "n1", "to_id": "n2"}}},
-        # validate spawns its own child subprocess — its output must not leak either
+        # validate spawns its own child subprocess - its output must not leak either
         {"jsonrpc": "2.0", "id": 5, "method": "tools/call",
          "params": {"name": "validate_architecture", "arguments": {}}},
     ]
@@ -193,7 +193,7 @@ def test_full_mode_stdout_is_pure_jsonrpc_despite_uvicorn():
     errlog = "".join(err_chunks)
     stdout_lines = [ln for ln in stdout_lines if ln.strip()]
 
-    # every stdout line is a JSON-RPC frame — uvicorn's access log did NOT leak
+    # every stdout line is a JSON-RPC frame - uvicorn's access log did NOT leak
     for ln in stdout_lines:
         obj = json.loads(ln)  # raises -> fails if any line isn't JSON
         assert obj.get("jsonrpc") == "2.0", f"non-JSON-RPC line on stdout: {ln!r}"

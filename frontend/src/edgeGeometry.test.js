@@ -4,7 +4,7 @@ import { COL_GAP } from "./layout.js";
 
 describe("isSkipSpan", () => {
   it("treats an adjacent-column edge as a normal (non-skip) edge", () => {
-    // adjacent handles are about (COL_GAP - cell width) apart — under one column
+    // adjacent handles are about (COL_GAP - cell width) apart - under one column
     expect(isSkipSpan(0, COL_GAP - 150)).toBe(false);
   });
 

@@ -1,4 +1,4 @@
-"""FastAPI websocket app — the human-facing half of the dual surface (spec §12).
+"""FastAPI websocket app - the human-facing half of the dual surface (spec §12).
 
 The websocket handler is a **thin adapter over the same ``ArchitectureStore``** the
 MCP tools call (CLAUDE.md invariant 2): every human edit maps 1:1 to one store
@@ -6,7 +6,7 @@ method, so the canvas can never drift from what the agent believes exists.
 
 Protocol (§12):
   * **Server → client**: on connect, and after every successful mutation from
-    *either* surface, a ``{"type": "state", "data": {nodes, edges}}`` message —
+    *either* surface, a ``{"type": "state", "data": {nodes, edges}}`` message,
     broadcast to *all* connected clients.
   * **Client → server**: one message per mutating store method
     (``add_layer``/``update_layer``/``remove_layer``/``connect_layers``/
@@ -15,7 +15,7 @@ Protocol (§12):
     ``{"type":"error","message":...}``, and on success broadcasts a fresh state.
 
 ``build_app(store)`` returns ``(app, broadcast)``. The ``broadcast`` coroutine is
-also handed to ``build_mcp`` so MCP mutations push state to ws clients too — one
+also handed to ``build_mcp`` so MCP mutations push state to ws clients too - one
 broadcast path, shared. Every inbound request is logged (to stderr + the log file
 configured in ``main.py``) so the whole session can be replayed for debugging;
 stdout is never touched (invariant 1).
@@ -31,7 +31,7 @@ log = logging.getLogger("nn_architect.ws")
 
 # Maps each client message ``type`` to (store method name, *field names* to pull
 # from the message as positional args). The store is the only mutation path, so
-# this table is the *entire* dispatch logic — no graph mutation lives here.
+# this table is the *entire* dispatch logic - no graph mutation lives here.
 _DISPATCH = {
     "add_layer": ("add_layer", ("layer_type", "params")),
     "update_layer": ("update_layer", ("node_id", "params")),
@@ -72,7 +72,7 @@ class ConnectionManager:
 
     async def broadcast(self) -> None:
         """Push current state to every client. Used both by the ws handler (after
-        a human edit) and by the MCP tools (after an agent edit) — the single
+        a human edit) and by the MCP tools (after an agent edit) - the single
         broadcast path that keeps both surfaces in sync."""
         if not self.clients:
             return
@@ -152,7 +152,7 @@ def build_app(store):
                 await manager.broadcast()
         except WebSocketDisconnect:
             manager.disconnect(ws)
-        except Exception:  # noqa: BLE001 — never let one client kill the server
+        except Exception:  # noqa: BLE001 - never let one client kill the server
             log.exception("ws handler error; closing client")
             manager.disconnect(ws)
 

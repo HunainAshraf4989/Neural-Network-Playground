@@ -1,7 +1,7 @@
 """Architecture validation by REAL execution in an isolated subprocess.
 
 This is the only place shape-correctness is decided. It generates code, writes
-it to a per-invocation temp file (deleted when the run ends — concurrent
+it to a per-invocation temp file (deleted when the run ends - concurrent
 validations never share a path), then runs ``runner_template.py`` against it
 under a timeout (``NN_VALIDATION_TIMEOUT_S``, default 10 s). Errors come back
 as structured ``LayerExecutionError`` fields (node_id/layer_type/message),
@@ -22,7 +22,7 @@ TIMEOUT_SECONDS = float(os.environ.get("NN_VALIDATION_TIMEOUT_S", "10"))
 # rejected *before* we spawn torch, so a pathological model (e.g. a linear layer
 # with 100k in/out = 10B params) gets a clean message instead of thrashing the
 # machine or aborting OpenBLAS. This is a memory guard, NOT a shape check
-# (invariant 4 — shape correctness is still decided only by real execution below).
+# (invariant 4 - shape correctness is still decided only by real execution below).
 # The subprocess also caps its own RAM (runner_template._cap_memory) as a hard net.
 MAX_PARAMS = int(os.environ.get("NN_VALIDATION_MAX_PARAMS", str(500_000_000)))
 

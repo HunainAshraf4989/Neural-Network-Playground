@@ -11,7 +11,7 @@ export function isSkipSpan(sourceX, targetX, colGap = COL_GAP) {
   return targetX - sourceX > colGap;
 }
 
-// A cubic that bows up and over the layers between source and target — the
+// A cubic that bows up and over the layers between source and target - the
 // conventional residual/skip arc. Lift grows with the span so longer skips clear
 // more nodes.
 export function skipArc(sourceX, sourceY, targetX, targetY) {

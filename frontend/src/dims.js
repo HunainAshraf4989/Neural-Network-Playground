@@ -1,7 +1,7 @@
 // Representative "feature width" per layer, used to SIZE its glyph so the shape
 // of the network reads at a glance: an autoencoder visibly tapers to its latent,
 // a CNN's channels grow, a transformer stays flat. This is purely a rendering
-// concern — like x/y positions it is computed on the frontend and never sent to
+// concern - like x/y positions it is computed on the frontend and never sent to
 // the backend (CLAUDE.md invariant 8: geometry/sizes never reach the validator
 // or codegen). Pure, so it's testable without mounting React Flow.
 //
@@ -94,7 +94,7 @@ export function computeWidths(arch) {
 
 // Map each node's width to a glyph diameter (px). Normalized PER GRAPH on a sqrt
 // scale: the widest layer is maxD, the narrowest minD, everything between by
-// sqrt(width) — so the taper is visible regardless of the absolute magnitudes
+// sqrt(width) - so the taper is visible regardless of the absolute magnitudes
 // (32→784 reads the same as 64→1568). A graph whose layers are all one width
 // renders them all at the midpoint rather than implying a bottleneck that isn't
 // there.
@@ -120,7 +120,7 @@ export function computeDiameters(arch, { minD = MIN_DIAMETER, maxD = MAX_DIAMETE
 
 // How many representative neuron dots to DRAW for a layer's glyph (used only by the
 // linear "neuron-stack" glyph). The count scales with the layer's true feature
-// width — per-graph, sqrt-normalized exactly like computeDiameters — so a 768-unit
+// width - per-graph, sqrt-normalized exactly like computeDiameters - so a 768-unit
 // layer visibly shows more neurons than a 128 than a 64. It's capped at MAX_NEURONS
 // (the glyph then draws top/⋮/bottom to imply the omitted middle) and never exceeds
 // the layer's actual neuron count. The *true* count still shows in the dim label,
@@ -192,7 +192,7 @@ export function neuronSplit(count, truncated) {
 }
 
 // Half the pixel height of a `count`-circle column (including the ⋮ slot when
-// truncated) — LayerNode uses it to place the type/dim labels just below the column
+// truncated) - LayerNode uses it to place the type/dim labels just below the column
 // (which can be taller than the node cell).
 export function neuronColumnHalfHeight(count, truncated = false) {
   const slots = slotCount(count, truncated);

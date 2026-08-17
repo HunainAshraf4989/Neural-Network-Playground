@@ -312,7 +312,7 @@ def test_non_object_message_errors():
 
 
 # A well-formed JSON message whose ``params`` is not an object (null / list /
-# string) must surface as a clean ``error`` — never escape as a TypeError and
+# string) must surface as a clean ``error`` - never escape as a TypeError and
 # drop the socket. The store guards this so both surfaces stay protected.
 
 def test_add_layer_non_dict_params_errors_without_dropping_socket():

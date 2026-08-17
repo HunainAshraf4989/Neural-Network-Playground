@@ -146,7 +146,7 @@ body { background: var(--bg); color: var(--text); }
 }
 
 /* Expansion sub-nodes are a derived, read-only view of a composite layer's
-   internals — dimmed and dashed-outlined so they read as "inside this block,"
+   internals - dimmed and dashed-outlined so they read as "inside this block,"
    not as editable graph nodes. */
 .nn-node--synthetic { opacity: 0.85; }
 .nn-node--synthetic .nn-glyph { border-style: dashed; }
@@ -175,10 +175,10 @@ body { background: var(--bg); color: var(--text); }
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--node-color, #8c8c8c) 50%, transparent), 0 2px 6px rgba(0, 0, 0, 0.3);
 }
 
-/* circle — the quiet in-place op (activation / norm / pooling / dropout / shape). */
+/* circle - the quiet in-place op (activation / norm / pooling / dropout / shape). */
 .nn-glyph--circle { border-radius: 50%; }
 
-/* slab — a conv layer drawn as stacked feature-map planes (the CNN block). */
+/* slab - a conv layer drawn as stacked feature-map planes (the CNN block). */
 .nn-glyph--slab {
   border-radius: 9px;
   box-shadow:
@@ -187,7 +187,7 @@ body { background: var(--bg); color: var(--text); }
     0 2px 6px rgba(0, 0, 0, 0.3);
 }
 
-/* stack — the COLLAPSED (default) linear layer: a compact pill with a few neuron
+/* stack - the COLLAPSED (default) linear layer: a compact pill with a few neuron
    dots. Expand swaps it for the neuron box below. */
 .nn-glyph--stack {
   width: calc(var(--d, 76px) * 0.72);
@@ -202,9 +202,9 @@ body { background: var(--bg); color: var(--text); }
   background: color-mix(in srgb, var(--node-color, #8c8c8c) 70%, #fff);
 }
 
-/* neurons — the EXPANDED "classic neural network" view of a per-neuron layer
+/* neurons - the EXPANDED "classic neural network" view of a per-neuron layer
    (input / linear / activation): a column of large solid neuron circles, centered on
-   the node so the fully-connected lines (NeuronBundleEdge) land on them. No box — the
+   the node so the fully-connected lines (NeuronBundleEdge) land on them. No box - the
    circles ARE the layer. Circle size/gap match dims.js (NEURON_CIRCLE / NEURON_GAP) so
    the node and the edge agree on where each neuron sits. */
 .nn-neuron-col {
@@ -227,7 +227,7 @@ body { background: var(--bg); color: var(--text); }
 }
 /* The ⋮ that stands in for a truncated layer's omitted middle neurons. It occupies
    exactly one circle-slot (14px tall, same NEURON_STEP rhythm as the circles) so the
-   bundle edges — which skip this slot — stay aligned with the drawn circles. */
+   bundle edges - which skip this slot - stay aligned with the drawn circles. */
 .nn-neuron-col__more {
   height: 14px;
   display: flex;
@@ -263,7 +263,7 @@ body { background: var(--bg); color: var(--text); }
   opacity: 0.3;
 }
 
-/* block — a transformer / attention sub-layer composite. */
+/* block - a transformer / attention sub-layer composite. */
 .nn-glyph--block,
 .nn-glyph--loop {
   width: calc(var(--d, 76px) * 1.18);
@@ -279,7 +279,7 @@ body { background: var(--bg); color: var(--text); }
 }
 .nn-glyph__loop { position: absolute; top: 4px; right: 7px; font-size: 13px; line-height: 1; color: color-mix(in srgb, var(--node-color, #8c8c8c) 70%, #fff); }
 
-/* merge — a junction where paths add (⊕) or concatenate (∥). */
+/* merge - a junction where paths add (⊕) or concatenate (∥). */
 .nn-glyph--merge {
   width: calc(var(--d, 76px) * 0.82);
   height: calc(var(--d, 76px) * 0.82);
@@ -287,7 +287,7 @@ body { background: var(--bg); color: var(--text); }
 }
 .nn-glyph__sign { font-size: calc(var(--d, 76px) * 0.34); font-weight: 800; line-height: 1; color: color-mix(in srgb, var(--node-color, #8c8c8c) 78%, #fff); }
 
-/* tag — the input data tensor. */
+/* tag - the input data tensor. */
 .nn-glyph--tag {
   width: calc(var(--d, 76px) * 1.12);
   height: calc(var(--d, 76px) * 0.72);
@@ -302,7 +302,7 @@ body { background: var(--bg); color: var(--text); }
   color: color-mix(in srgb, var(--node-color, #e6eaf2) 60%, #ffffff);
   /* Wrap BY WORD: break only at the word boundaries LayerNode marks with <wbr>
      (underscores/spaces), and fall back to splitting inside a single word only
-     when that word alone can't fit — never chop a fitting word mid-letter. */
+     when that word alone can't fit - never chop a fitting word mid-letter. */
   word-break: normal;
   overflow-wrap: break-word;
 }
@@ -359,7 +359,7 @@ body { background: var(--bg); color: var(--text); }
 .nn-node__tooltip-val { font-variant-numeric: tabular-nums; }
 
 /* Handles are hidden by default so edges flow cleanly INTO the glyph (no
-   ring-to-ring gap), and fade in on node hover for discoverable hand-wiring —
+   ring-to-ring gap), and fade in on node hover for discoverable hand-wiring,
    the same hover-reveal affordance as the edge-delete button. They stay in the
    DOM (so React Flow still routes edges to the glyph edge and connecting works);
    only their visibility changes. */

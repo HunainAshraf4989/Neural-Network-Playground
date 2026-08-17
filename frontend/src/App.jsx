@@ -1,16 +1,16 @@
 // Top-level app: renders the shared architecture on a React Flow canvas and
 // turns user actions into §12 client messages. The backend is the single source
-// of truth — every mutation is sent, never applied locally; the canvas only ever
+// of truth - every mutation is sent, never applied locally; the canvas only ever
 // shows what the server broadcasts back (so it can't drift from the agent's view).
 //
 // Ownership split (the rule that keeps the canvas from desyncing): the backend
-// owns *existence* — which nodes and edges there are — and React Flow owns only
+// owns *existence* - which nodes and edges there are - and React Flow owns only
 // *geometry* (where they sit) and transient UI (hover/selection). React Flow's
 // change stream is therefore guarded so it can never remove a node/edge locally
 // (see onNodesChange/onEdgesChange + dropRemoveChanges); a deletion only ever
 // lands via a backend broadcast.
 //
-// Layout note (CLAUDE.md invariant 8): node x/y are NOT in the shared schema —
+// Layout note (CLAUDE.md invariant 8): node x/y are NOT in the shared schema;
 // they're recomputed each broadcast by the deterministic auto-layout. Overrides
 // layer on top, highest first: a user drag position, then an agent {col,row}
 // hint, then (for a node that just lost its path from input) its current spot, so
@@ -59,7 +59,7 @@ const IMAGE_BG = "#0f1420"; // matches the dark canvas background
 // Dragging snaps onto the column/row grid so nodes stay aligned into clean columns.
 const GRID = [COL_GAP, ROW_GAP];
 // Upper bound for auto-fit zoom. fitView still zooms OUT to fit a big graph; this
-// only caps how far it zooms IN on a small one — kept generous so a 1–3 node net
+// only caps how far it zooms IN on a small one - kept generous so a 1–3 node net
 // renders large enough to actually read (was 0.85, which left small nets tiny).
 const FIT_MAX_ZOOM = 1.4;
 
@@ -71,7 +71,7 @@ export default function App() {
   const [codeModal, setCodeModal] = useState(null); // {code} | {error} | null
   // "Expand architecture": a read-only view that substitutes composite layers
   // (transformer_encoder_layer, multihead_attention, stacked/bidi RNNs) with their
-  // internal subgraph. Purely a frontend view transform (expansions.js) — the store
+  // internal subgraph. Purely a frontend view transform (expansions.js) - the store
   // never sees the sub-nodes (invariant 8), so it can't desync the canvas.
   const [expanded, setExpanded] = useState(false);
   const rfRef = useRef(null);
@@ -88,7 +88,7 @@ export default function App() {
   //   2. else an agent placement hint ({col,row} on the backend `layout`) wins;
   //   3. else, if the node has *lost* its path from input (e.g. the user deleted
   //      an upstream edge), it stays where it already is rather than collapsing
-  //      back to the input column — so deleting one wire doesn't reshuffle the
+  //      back to the input column - so deleting one wire doesn't reshuffle the
   //      whole downstream graph. Once it's re-wired, the edge-driven layout takes
   //      over again.
   // Existence is never applied locally: nodes/edges only appear/disappear from a
@@ -96,7 +96,7 @@ export default function App() {
   // from the agent's view.
   useEffect(() => {
     // The geometry pipeline (layout/sizing/glyphs) runs on the *view* graph: the
-    // store graph itself, or — when "Expand architecture" is on — that graph with
+    // store graph itself, or - when "Expand architecture" is on - that graph with
     // composite nodes substituted by their internal subgraph. expandGraph is a pure
     // {nodes,edges,layout} -> {nodes,edges,layout} transform, so everything below is
     // unchanged. Drag-override cleanup still keys off the *store* ids (existence),
@@ -111,7 +111,7 @@ export default function App() {
     }
 
     // A palette drop remembered where it landed (pendingDropRef). Once the backend
-    // echoes the new node back, park it at that spot — the SAME frontend-only
+    // echoes the new node back, park it at that spot - the SAME frontend-only
     // mechanism as a manual drag (a drag override), so the drop position never
     // reaches the store (invariant 8). Match by the single id that's new since the
     // last broadcast; if a drop somehow produced no/many new nodes, drop the hint.
@@ -131,10 +131,10 @@ export default function App() {
     const reachable = reachableFromInput(graph); // ids with a path from input
     const hasInput = (graph?.nodes ?? []).some((node) => node.type === "input");
     // Glyph size + label per node from its feature width (dims.js). Frontend-only,
-    // exactly like positions — it never reaches the backend (invariant 8).
+    // exactly like positions - it never reaches the backend (invariant 8).
     const diameters = computeDiameters(graph);
     const widths = computeWidths(graph);
-    // Representative neuron count per node — drawn only by the linear glyph so the
+    // Representative neuron count per node - drawn only by the linear glyph so the
     // number of neurons on screen reads as the layer's size (see LayerNode).
     const neurons = computeNeuronCounts(graph);
 
@@ -212,7 +212,7 @@ export default function App() {
     );
   }, [arch, expanded, setNodes, setEdges, send]);
 
-  // Re-frame only when a node is ADDED, so a new node is always visible — but
+  // Re-frame only when a node is ADDED, so a new node is always visible - but
   // leave the view alone on delete and on param edits (which previously caused
   // the canvas to jump/zoom unexpectedly). `maxZoom` keeps the fit from zooming
   // way in on a one/two-node graph (which made the circles huge).
@@ -254,7 +254,7 @@ export default function App() {
   const add = useCallback((type) => send(proto.addLayer(type, defaultParams(type))), [send]);
 
   // The expanded view is read-only (its sub-nodes aren't in the store), so wiring
-  // is disabled while it's on — toggle off to edit the real graph.
+  // is disabled while it's on - toggle off to edit the real graph.
   const onConnect = useCallback(
     (c) => {
       if (expanded) return;
@@ -272,7 +272,7 @@ export default function App() {
   );
 
   // React Flow may freely move/measure/select on the canvas, but it must never
-  // *delete* a node/edge from our controlled state on its own — existence lives
+  // *delete* a node/edge from our controlled state on its own - existence lives
   // in the backend. We drop `remove` changes (a known source of the canvas
   // dropping edges it can't momentarily resolve); a real user delete still fires
   // onNodesDelete/onEdgesDelete -> backend -> broadcast. See dropRemoveChanges.
@@ -413,7 +413,7 @@ export default function App() {
                 <div className="canvas__empty-title">Canvas is live</div>
                 <p>
                   Drag a layer from the palette, or ask your agent to build a
-                  network — it appears here as it's created.
+                  network - it appears here as it's created.
                 </p>
               </>
             ) : (
@@ -421,7 +421,7 @@ export default function App() {
                 <div className="canvas__empty-title">Waiting for the backend…</div>
                 <p>
                   The canvas reconnects automatically. Make sure a backend is
-                  running — Claude Desktop launches it, or run{" "}
+                  running - Claude Desktop launches it, or run{" "}
                   <code>MODE=standalone python backend/main.py</code>.
                 </p>
               </>

@@ -3,7 +3,7 @@
 This module is the single place that knows which layer types exist and what
 params they take. It performs *structural* validation (unknown type, missing
 required param, unknown param) plus per-param *value* checks (right type,
-sane bounds — see ``_VALUE_SPECS``) — never tensor-shape math. Shape
+sane bounds - see ``_VALUE_SPECS``) - never tensor-shape math. Shape
 correctness is determined exclusively by real execution in ``validator.py``.
 
 Each catalog entry carries:
@@ -97,9 +97,9 @@ MERGE_TYPES = {"add", "concat"}
 # Structural checking above answers "which params exist"; this table answers
 # "what values does each accept". It is deliberately a flat name->spec table with
 # one checker, not a validation framework: its job is to keep params *honest
-# scalars* — a string "100000" or a 10**12 int must not slip past the validator's
+# scalars* - a string "100000" or a 10**12 int must not slip past the validator's
 # pre-flight param estimate (whose arithmetic silently returns 0 on a TypeError)
-# — never to do tensor-shape math (invariant 4: shapes are decided only by real
+# - never to do tensor-shape math (invariant 4: shapes are decided only by real
 # execution in validator.py). Param names are consistent across layer types, so
 # one entry per name covers every type that uses it.
 #
